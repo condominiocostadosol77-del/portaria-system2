@@ -21,9 +21,16 @@ import { Resident, PackageItem, Company, Employee, Occurrence, ReceivedItem, Bor
 import { supabase } from './lib/supabase';
 
 const App: React.FC = () => {
-  // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile>(CURRENT_USER);
+  // Auth State - Initializing from localStorage to persist login
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+    const savedUser = localStorage.getItem('portaria_user');
+    return savedUser ? JSON.parse(savedUser) : CURRENT_USER;
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return !!localStorage.getItem('portaria_user');
+  });
+
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -173,7 +180,8 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Error fetching data:", error);
-      alert("Erro ao carregar dados do sistema. Verifique a conexão.");
+      // alert("Erro ao carregar dados do sistema. Verifique a conexão."); 
+      // Commented out alert to avoid spam on initial load if network is slow, handled by UI state mostly
     } finally {
       setIsLoading(false);
     }
@@ -184,50 +192,17 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  // --- HANDLERS WRAPPERS (To Update State + DB) ---
-
-  // RESIDENTS
-  const handleUpdateResidents = async (newResidents: Resident[] | ((prev: Resident[]) => Resident[])) => {
-    // Note: This logic assumes we mostly set state via the CRUD operations below
-    // But for the setter prop passed to ResidentsPage, we need to handle it.
-    // However, ResidentsPage handles specific CRUD ops. Let's make sure ResidentsPage calls these functions instead.
-    // To minimize refactoring Child Components, we will intercept the state setters.
-    // Actually, passing `setResidents` allows child components to modify local state.
-    // Ideally we should sync with DB. 
-    // The safest way without rewriting every child component is to use `useEffect` on the change? No, that causes loops.
-    // We will update the `ResidentsPage` (and others) to accept `onAdd`, `onEdit`, `onDelete` props? 
-    // No, the prompt asked to "update the app" to use Supabase. 
-    // The components currently use `setResidents` directly.
-    // I will replace `setResidents` logic in the components? No, better to update the components to use Supabase.
-    // BUT, since I can only return specific files, and App.tsx holds the state,
-    // I will pass *wrapped* setters that perform the DB action.
-    
-    // Actually, the components use `setResidents(prev => ...)` logic.
-    // Intercepting that is hard.
-    // Plan B: I will update the components to use `supabase` calls instead of local state setters where possible, 
-    // OR I will simply refresh data from Supabase after the local setter is called?
-    // No, `setResidents` is synchronous.
-    
-    // **Decision**: I will update `App.tsx` to pass the data, but for mutations, I will create helper functions in `App.tsx` and pass THEM down, 
-    // modifying the child components to use `onSave`, `onDelete` instead of `setItems`.
-    // Wait, the child components already have `handleSubmit` which calls `setResidents`.
-    // I will modify the child components to use these new props.
-    
-    // Actually, simpler: I'll modify `App.tsx` to include the `set` logic that calls Supabase.
-    // But React `setState` doesn't support async side effects easily inside the setter.
-    
-    // **Final Plan**: I will update the Child Components to perform the Supabase operations directly and then call `fetchData` (passed as a prop) to refresh the list.
-    // This is the cleanest architecture given the file constraints.
-    // I'll add `onRefresh={fetchData}` to all pages.
-  };
-
   // Auth Handlers
   const handleLogin = (employeeName: string) => {
-    setCurrentUser({
+    const user = {
       name: employeeName,
       role: employeeName === 'Administrador' ? 'ADMINISTRADOR' : 'OPERADOR'
-    });
+    };
+    
+    setCurrentUser(user);
     setIsAuthenticated(true);
+    // Persist to localStorage
+    localStorage.setItem('portaria_user', JSON.stringify(user));
   };
 
   const handleLogoutRequest = () => {
@@ -239,6 +214,8 @@ const App: React.FC = () => {
     setIsLogoutModalOpen(false);
     setIsSidebarOpen(false);
     setActivePage('dashboard');
+    // Clear persistence
+    localStorage.removeItem('portaria_user');
   };
 
   const handleNotepadSave = async (data: Omit<Occurrence, 'id' | 'timestamp'>) => {
@@ -262,10 +239,6 @@ const App: React.FC = () => {
       alert('Erro ao salvar ocorrência');
     }
   };
-
-  // GENERIC CRUD HANDLERS (To be passed to pages to replace local state logic)
-  // Since I can't rewrite every page's internal logic easily without replacing the whole file content,
-  // I'll replace the *entire content* of the Page components in this response to use Supabase.
 
   if (!isAuthenticated && !isLoading) {
     return (
@@ -320,78 +293,64 @@ const App: React.FC = () => {
         ) : activePage === 'moradores' ? (
           <ResidentsPage 
             residents={residents}
-            setResidents={setResidents as any} // Cast to bypass type, we will override internal logic
-            // We need to pass the refresh function or handle logic here.
-            // Since ResidentsPage uses setResidents for CRUD, we must intercept it or rewrite the page.
-            // I will REWRITE ResidentsPage below to accept onRefresh and handle Supabase.
             onRefresh={fetchData}
           />
         ) : activePage === 'encomendas' ? (
           <PackagesPage 
             residents={residents}
             packages={packages}
-            setPackages={setPackages as any}
             companies={companies}
             onRefresh={fetchData}
           />
         ) : activePage === 'recebidos' ? (
           <ReceivedItemsPage 
             items={receivedItems}
-            setItems={setReceivedItems as any}
             residents={residents}
             onRefresh={fetchData}
           />
         ) : activePage === 'materiais' ? (
           <MaterialsPage 
             materials={materials}
-            setMaterials={setMaterials as any}
             residents={residents}
             onRefresh={fetchData}
           />
         ) : activePage === 'visitantes' ? (
           <VisitorsPage 
             visitors={visitors}
-            setVisitors={setVisitors as any}
             residents={residents}
             onRefresh={fetchData}
           />
         ) : activePage === 'ponto' ? (
           <TimeSheetPage 
             records={timeRecords}
-            setRecords={setTimeRecords as any}
             employees={employees}
             onRefresh={fetchData}
           />
         ) : activePage === 'empresas' ? (
           <CompaniesPage 
             companies={companies}
-            setCompanies={setCompanies as any}
             onRefresh={fetchData}
           />
         ) : activePage === 'entregadores' ? (
           <DeliveryDriversPage 
             drivers={deliveryDrivers}
-            setDrivers={setDeliveryDrivers as any}
             companies={companies}
             onRefresh={fetchData}
           />
         ) : activePage === 'visitas' ? (
           <DeliveryVisitsPage
             visits={deliveryVisits}
-            setVisits={setDeliveryVisits as any}
             drivers={deliveryDrivers}
             onRefresh={fetchData}
           />
         ) : activePage === 'funcionarios' ? (
           <EmployeesPage 
             employees={employees}
-            setEmployees={setEmployees as any}
             onRefresh={fetchData}
           />
         ) : activePage === 'ocorrencias' ? (
           <OccurrencesPage 
             occurrences={occurrences}
-            setOccurrences={setOccurrences as any}
             employees={employees}
             onRefresh={fetchData}
             onOpenNotepad={() => {
