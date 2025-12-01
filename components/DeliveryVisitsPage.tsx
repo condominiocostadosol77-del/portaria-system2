@@ -18,11 +18,31 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const today = new Date();
-  const todayStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth()+1).toString().padStart(2, '0')}/${today.getFullYear()}`;
+  // Helper to check if a date string matches today
+  const checkIsToday = (dateStr: string) => {
+    if (!dateStr) return false;
+    // Split date and time: "DD/MM/YYYY HH:MM" -> ["DD/MM/YYYY", "HH:MM"]
+    const [datePart] = dateStr.split(' ');
+    if (!datePart) return false;
+    
+    const parts = datePart.split('/');
+    if (parts.length !== 3) return false;
+
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    let year = parseInt(parts[2], 10);
+    
+    // Handle 2-digit years (e.g., 25 -> 2025)
+    if (year < 100) year += 2000;
+    
+    const now = new Date();
+    return day === now.getDate() && 
+           month === (now.getMonth() + 1) && 
+           year === now.getFullYear();
+  };
   
-  const visitsToday = visits.filter(v => v.entryTime.includes(todayStr)).length;
-  const packagesToday = visits.filter(v => v.entryTime.includes(todayStr)).reduce((acc, curr) => acc + curr.packageCount, 0);
+  const visitsToday = visits.filter(v => checkIsToday(v.entryTime)).length;
+  const packagesToday = visits.filter(v => checkIsToday(v.entryTime)).reduce((acc, curr) => acc + curr.packageCount, 0);
 
   const filteredVisits = useMemo(() => {
     return visits.filter(v => {
@@ -47,7 +67,8 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
   const handleSubmit = async (data: Omit<DeliveryVisit, 'id' | 'entryTime'>) => {
     try {
       const now = new Date();
-      const entryTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      // Use full year (YYYY) for consistency
+      const entryTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
       const payload = {
         driver_id: data.driverId,
