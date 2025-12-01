@@ -3,34 +3,29 @@ import { Plus, Search, Calendar, AlertTriangle } from 'lucide-react';
 import { Company } from '../types';
 import { CompanyCard } from './CompanyCard';
 import { CompanyModal } from './CompanyModal';
+import { supabase } from '../lib/supabase';
 
 interface CompaniesPageProps {
   companies: Company[];
-  setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
+  setCompanies?: React.Dispatch<React.SetStateAction<Company[]>>;
+  onRefresh: () => void;
 }
 
-export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setCompanies }) => {
+export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'ativa' | 'inativa'>('todos');
-  
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Filter Logic
   const filteredCompanies = useMemo(() => {
     return companies.filter(company => {
       const matchesSearch = company.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = filterStatus === 'todos' || company.status === filterStatus;
-
       return matchesSearch && matchesStatus;
     });
   }, [companies, searchTerm, filterStatus]);
 
-  // Handlers
   const handleAddNew = () => {
     setEditingId(null);
     setIsModalOpen(true);
@@ -45,36 +40,41 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
     setDeleteId(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteId) {
-      setCompanies(prev => prev.filter(c => c.id !== deleteId));
+      const { error } = await supabase.from('companies').delete().eq('id', deleteId);
+      if (error) alert('Erro ao excluir empresa');
+      else onRefresh();
       setDeleteId(null);
     }
   };
 
-  const handleSubmit = (data: Omit<Company, 'id'>) => {
-    if (editingId) {
-      // Edit existing
-      setCompanies(prev => prev.map(c => c.id === editingId ? { ...data, id: editingId } : c));
-    } else {
-      // Create new
-      const newId = Math.random().toString(36).substr(2, 9);
-      setCompanies(prev => [{ ...data, id: newId }, ...prev]);
+  const handleSubmit = async (data: Omit<Company, 'id'>) => {
+    try {
+      if (editingId) {
+        const { error } = await supabase.from('companies').update(data).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('companies').insert(data);
+        if (error) throw error;
+      }
+      onRefresh();
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar empresa');
     }
-    setIsModalOpen(false);
   };
 
   const editingCompany = editingId ? companies.find(c => c.id === editingId) : undefined;
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Empresas</h1>
           <p className="text-slate-500 mt-1">Cadastro de empresas de entrega</p>
         </div>
-        
         <button 
           onClick={handleAddNew}
           className="bg-secondary hover:bg-purple-600 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-purple-200 transition-colors"
@@ -84,10 +84,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
         </button>
       </div>
 
-      {/* Filters Bar */}
       <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-100 mb-6 flex flex-col xl:flex-row items-center justify-between gap-4">
-        
-        {/* Search */}
         <div className="flex-1 w-full">
           <div className="relative w-full">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -102,8 +99,6 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
             />
           </div>
         </div>
-
-        {/* Status Tabs & Date */}
         <div className="flex items-center gap-4 w-full xl:w-auto">
            <div className="flex bg-slate-100 p-1 rounded-lg w-full xl:w-auto">
             {(['todos', 'ativa', 'inativa'] as const).map((status) => (
@@ -111,16 +106,13 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
                 key={status}
                 onClick={() => setFilterStatus(status)}
                 className={`flex-1 xl:flex-none px-6 py-1.5 rounded-md text-sm font-medium capitalize transition-all ${
-                  filterStatus === status
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                  filterStatus === status ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {status === 'todos' ? 'Todos' : status === 'ativa' ? 'Ativas' : 'Inativas'}
               </button>
             ))}
           </div>
-          
           <div className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 rounded-lg text-slate-500 text-sm bg-white min-w-[140px] justify-between cursor-pointer hover:border-slate-300">
             <span>dd/mm/aaaa</span>
             <Calendar size={16} />
@@ -128,7 +120,6 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
         </div>
       </div>
 
-      {/* Grid List */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredCompanies.length > 0 ? (
           filteredCompanies.map((company) => (
@@ -146,7 +137,6 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
         )}
       </div>
 
-      {/* Form Modal */}
       <CompanyModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -154,7 +144,6 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
         initialData={editingCompany}
       />
 
-      {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
@@ -164,21 +153,11 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({ companies, setComp
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Empresa</h3>
               <p className="text-slate-500 mb-6 text-sm">
-                Tem certeza que deseja excluir esta empresa? Esta ação não pode ser desfeita.
+                Tem certeza que deseja excluir esta empresa?
               </p>
               <div className="flex items-center gap-3 w-full">
-                <button 
-                  onClick={() => setDeleteId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmDelete}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
-                >
-                  Excluir
-                </button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50">Cancelar</button>
+                <button onClick={confirmDelete} className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg shadow-red-200">Excluir</button>
               </div>
             </div>
           </div>

@@ -4,31 +4,28 @@ import { Occurrence, Employee } from '../types';
 import { OccurrenceCard } from './OccurrenceCard';
 import { OccurrenceModal } from './OccurrenceModal';
 import { OccurrenceDetailsModal } from './OccurrenceDetailsModal';
+import { supabase } from '../lib/supabase';
 
 interface OccurrencesPageProps {
   occurrences: Occurrence[];
-  setOccurrences: React.Dispatch<React.SetStateAction<Occurrence[]>>;
+  setOccurrences?: React.Dispatch<React.SetStateAction<Occurrence[]>>;
   employees: Employee[];
   onOpenNotepad: () => void;
+  onRefresh: () => void;
 }
 
 export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({ 
   occurrences, 
-  setOccurrences, 
   employees,
-  onOpenNotepad
+  onOpenNotepad,
+  onRefresh
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedOccurrence, setSelectedOccurrence] = useState<Occurrence | null>(null);
-  
-  // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Filter
   const filteredOccurrences = useMemo(() => {
     return occurrences.filter(occ => 
       occ.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -37,28 +34,37 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
     );
   }, [occurrences, searchTerm]);
 
-  // Handlers
-  const handleCreate = (data: Omit<Occurrence, 'id' | 'timestamp'>) => {
+  const handleCreate = async (data: Omit<Occurrence, 'id' | 'timestamp'>) => {
     const now = new Date();
     const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     const timestamp = `${now.getDate()} de ${months[now.getMonth()]} de ${now.getFullYear()} às ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    const newOccurrence: Occurrence = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp,
-      ...data
-    };
-
-    setOccurrences([newOccurrence, ...occurrences]);
+    try {
+      const { error } = await supabase.from('occurrences').insert({
+        outgoing_employee_name: data.outgoingEmployeeName,
+        incoming_employee_name: data.incomingEmployeeName,
+        description: data.description,
+        timestamp
+      });
+      if (error) throw error;
+      onRefresh();
+      setIsNewModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao registrar ocorrência');
+    }
   };
 
   const handleDelete = (id: string) => {
     setDeleteId(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteId) {
-      setOccurrences(prev => prev.filter(o => o.id !== deleteId));
+      const { error } = await supabase.from('occurrences').delete().eq('id', deleteId);
+      if (error) alert('Erro ao excluir');
+      else onRefresh();
+      
       setDeleteId(null);
       if (isDetailsModalOpen) setIsDetailsModalOpen(false);
     }
@@ -71,13 +77,11 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Ocorrências e Passagem de Turno</h1>
           <p className="text-slate-500 mt-1">Registro de ocorrências e troca de turno</p>
         </div>
-        
         <div className="flex gap-3">
           <button 
             onClick={onOpenNotepad}
@@ -96,7 +100,6 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
         </div>
       </div>
 
-      {/* Search Bar */}
       <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-100 mb-6">
         <div className="relative w-full">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -112,7 +115,6 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
           </div>
       </div>
 
-      {/* List */}
       <div className="space-y-4">
         {filteredOccurrences.length > 0 ? (
           filteredOccurrences.map(occ => (
@@ -133,7 +135,6 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
         )}
       </div>
 
-      {/* Modals */}
       <OccurrenceModal 
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
@@ -148,7 +149,6 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
         onDelete={handleDelete}
       />
 
-      {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
@@ -158,21 +158,11 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Ocorrência</h3>
               <p className="text-slate-500 mb-6 text-sm">
-                Tem certeza que deseja excluir esta ocorrência? Esta ação não pode ser desfeita.
+                Tem certeza que deseja excluir esta ocorrência?
               </p>
               <div className="flex items-center gap-3 w-full">
-                <button 
-                  onClick={() => setDeleteId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmDelete}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
-                >
-                  Excluir
-                </button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50">Cancelar</button>
+                <button onClick={confirmDelete} className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg shadow-red-200">Excluir</button>
               </div>
             </div>
           </div>

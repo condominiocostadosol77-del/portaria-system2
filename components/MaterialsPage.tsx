@@ -1,24 +1,23 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Calendar, Wrench, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Wrench, AlertTriangle } from 'lucide-react';
 import { BorrowedMaterial, Resident } from '../types';
 import { MaterialCard } from './MaterialCard';
 import { MaterialModal } from './MaterialModal';
+import { supabase } from '../lib/supabase';
 
 interface MaterialsPageProps {
   materials: BorrowedMaterial[];
-  setMaterials: React.Dispatch<React.SetStateAction<BorrowedMaterial[]>>;
+  setMaterials?: React.Dispatch<React.SetStateAction<BorrowedMaterial[]>>;
   residents: Resident[];
+  onRefresh: () => void;
 }
 
-export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMaterials, residents }) => {
+export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, residents, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'emprestados' | 'devolvidos'>('todos');
-  
-  // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Filter Logic
   const filteredMaterials = useMemo(() => {
     return materials.filter(item => {
       const matchesSearch = 
@@ -32,50 +31,69 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
     });
   }, [materials, searchTerm, filterStatus]);
 
-  // Handlers
-  const handleCreate = (data: Omit<BorrowedMaterial, 'id' | 'status' | 'loanDate' | 'returnDate'>) => {
+  const handleCreate = async (data: Omit<BorrowedMaterial, 'id' | 'status' | 'loanDate' | 'returnDate'>) => {
     const now = new Date();
     const loanDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    const newMaterial: BorrowedMaterial = {
-      id: Math.random().toString(36).substr(2, 9),
-      status: 'Emprestado',
-      loanDate,
-      ...data
-    };
-
-    setMaterials([newMaterial, ...materials]);
+    try {
+      const { error } = await supabase.from('borrowed_materials').insert({
+        material_name: data.materialName,
+        borrower_type: data.borrowerType,
+        borrower_name: data.borrowerName,
+        unit: data.unit,
+        block: data.block,
+        document: data.document,
+        phone: data.phone,
+        loan_date: loanDate,
+        status: 'Emprestado',
+        observations: data.observations
+      });
+      if (error) throw error;
+      onRefresh();
+      setIsNewModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao registrar empréstimo');
+    }
   };
 
-  const handleReturn = (id: string) => {
+  const handleReturn = async (id: string) => {
     const now = new Date();
     const returnDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    setMaterials(prev => prev.map(item => 
-      item.id === id ? { ...item, status: 'Devolvido', returnDate } : item
-    ));
+    try {
+      const { error } = await supabase.from('borrowed_materials').update({
+        status: 'Devolvido',
+        return_date: returnDate
+      }).eq('id', id);
+      if (error) throw error;
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao registrar devolução');
+    }
   };
 
   const handleDelete = (id: string) => {
     setDeleteId(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteId) {
-      setMaterials(prev => prev.filter(m => m.id !== deleteId));
+      const { error } = await supabase.from('borrowed_materials').delete().eq('id', deleteId);
+      if (error) alert('Erro ao excluir');
+      else onRefresh();
       setDeleteId(null);
     }
   };
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Materiais Emprestados</h1>
           <p className="text-slate-500 mt-1">Controle de ferramentas e materiais do condomínio</p>
         </div>
-        
         <button 
           onClick={() => setIsNewModalOpen(true)}
           className="bg-[#EA580C] hover:bg-orange-700 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-orange-200 transition-colors"
@@ -85,10 +103,7 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
         </button>
       </div>
 
-      {/* Filters Bar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 space-y-4">
-        
-        {/* Search */}
         <div className="w-full relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
             <Search size={18} />
@@ -101,17 +116,13 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 transition-all text-sm placeholder:text-slate-400"
           />
         </div>
-
-        {/* Status Tabs */}
         <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-fit overflow-x-auto">
           {(['todos', 'emprestados', 'devolvidos'] as const).map((status) => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
               className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium capitalize transition-all whitespace-nowrap ${
-                filterStatus === status
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                filterStatus === status ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {status}
@@ -120,7 +131,6 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
         </div>
       </div>
 
-      {/* Grid List */}
       <div className="space-y-4">
         {filteredMaterials.length > 0 ? (
           filteredMaterials.map((item) => (
@@ -141,7 +151,6 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
         )}
       </div>
 
-      {/* Form Modal */}
       <MaterialModal 
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
@@ -149,7 +158,6 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
         residents={residents}
       />
 
-      {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
@@ -158,22 +166,10 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, setMate
                 <AlertTriangle size={24} />
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Empréstimo</h3>
-              <p className="text-slate-500 mb-6 text-sm">
-                Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.
-              </p>
+              <p className="text-slate-500 mb-6 text-sm">Tem certeza que deseja excluir?</p>
               <div className="flex items-center gap-3 w-full">
-                <button 
-                  onClick={() => setDeleteId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmDelete}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
-                >
-                  Excluir
-                </button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50">Cancelar</button>
+                <button onClick={confirmDelete} className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg shadow-red-200">Excluir</button>
               </div>
             </div>
           </div>

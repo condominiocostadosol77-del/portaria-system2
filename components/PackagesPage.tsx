@@ -4,33 +4,32 @@ import { PackageItem, Resident, Company } from '../types';
 import { PackageCard } from './PackageCard';
 import { PackageModal } from './PackageModal';
 import { PickupModal } from './PickupModal';
+import { supabase } from '../lib/supabase';
 
 interface PackagesPageProps {
   residents: Resident[];
   packages: PackageItem[];
-  setPackages: React.Dispatch<React.SetStateAction<PackageItem[]>>;
+  setPackages?: React.Dispatch<React.SetStateAction<PackageItem[]>>;
   companies: Company[];
+  onRefresh: () => void;
 }
 
-export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages, setPackages, companies }) => {
+export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages, companies, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'pendentes' | 'retiradas'>('pendentes');
   const [selectedGroup, setSelectedGroup] = useState<{unit: string, block: string} | null>(null);
   
-  // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [pickupId, setPickupId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isBulkPickupOpen, setIsBulkPickupOpen] = useState(false);
 
-  // Stats
   const stats = {
     total: packages.length,
     pending: packages.filter(p => p.status === 'Aguardando Retirada').length,
     pickedUp: packages.filter(p => p.status === 'Retirada').length
   };
 
-  // Base filtering (Search + Tab)
   const filteredPackages = useMemo(() => {
     return packages.filter(pkg => {
       const matchesSearch = 
@@ -45,54 +44,36 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     });
   }, [packages, searchTerm, filterStatus]);
 
-  // Grouping Logic for "Pendentes" view - BY BLOCK then BY UNIT
   const groupedPendingPackages = useMemo(() => {
     if (filterStatus !== 'pendentes' || selectedGroup) return [];
-
-    // 1. Group items by Block
     const blocks: Record<string, PackageItem[]> = {};
     
     filteredPackages.forEach(pkg => {
-      // Normalize block name (handle empty/undefined)
       const blockName = pkg.block ? pkg.block.toUpperCase() : 'OUTROS';
       if (!blocks[blockName]) blocks[blockName] = [];
       blocks[blockName].push(pkg);
     });
 
-    // 2. Process each block
     const processedBlocks = Object.entries(blocks).map(([blockName, blockItems]) => {
-      
-      // Group items by Unit within this block
       const units: Record<string, PackageItem[]> = {};
       blockItems.forEach(pkg => {
         if (!units[pkg.unit]) units[pkg.unit] = [];
         units[pkg.unit].push(pkg);
       });
 
-      // Create Unit Groups and Sort them Numerically
       const unitGroups = Object.entries(units).map(([unitName, unitItems]) => ({
         unit: unitName,
-        block: blockName, // Keep original block name for reference
+        block: blockName,
         count: unitItems.length,
         items: unitItems
-      })).sort((a, b) => {
-        // Natural/Numeric sorting (e.g., 2 comes before 10)
-        return a.unit.localeCompare(b.unit, undefined, { numeric: true, sensitivity: 'base' });
-      });
+      })).sort((a, b) => a.unit.localeCompare(b.unit, undefined, { numeric: true, sensitivity: 'base' }));
 
-      return {
-        blockName,
-        totalInBlock: blockItems.length,
-        unitGroups
-      };
+      return { blockName, totalInBlock: blockItems.length, unitGroups };
     });
 
-    // Sort Blocks Alphabetically
     return processedBlocks.sort((a, b) => a.blockName.localeCompare(b.blockName));
-
   }, [filteredPackages, filterStatus, selectedGroup]);
 
-  // Items to display in the main list or detail view
   const displayedPackages = useMemo(() => {
     if (selectedGroup) {
       return filteredPackages.filter(p => 
@@ -103,42 +84,72 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     return filteredPackages;
   }, [filteredPackages, selectedGroup]);
 
-  // Actions
-  const handleCreate = (data: Partial<PackageItem>) => {
-    const newPackage = {
-      ...data,
-      id: Math.random().toString(36).substr(2, 9),
-    } as PackageItem;
-    setPackages([newPackage, ...packages]);
-  };
-
-  const handlePickupConfirm = (name: string) => {
-    const now = new Date();
-    const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    
-    if (pickupId) {
-      // Single Pickup
-      setPackages(prev => prev.map(p => 
-        p.id === pickupId 
-          ? { ...p, status: 'Retirada', pickedUpBy: name, pickedUpAt: timestamp } 
-          : p
-      ));
-      setPickupId(null);
-    } else if (isBulkPickupOpen && selectedGroup) {
-      // Bulk Pickup
-      setPackages(prev => prev.map(p => 
-        (p.unit === selectedGroup.unit && (p.block ? p.block.toUpperCase() : 'OUTROS') === selectedGroup.block && p.status === 'Aguardando Retirada')
-          ? { ...p, status: 'Retirada', pickedUpBy: name, pickedUpAt: timestamp }
-          : p
-      ));
-      setIsBulkPickupOpen(false);
-      setSelectedGroup(null); // Return to list as items are no longer pending
+  const handleCreate = async (data: Partial<PackageItem>) => {
+    try {
+      const { error } = await supabase.from('packages').insert({
+        unit: data.unit,
+        block: data.block,
+        recipient_name: data.recipientName,
+        type: data.type,
+        sender: data.sender,
+        tracking_code: data.trackingCode,
+        withdrawal_code: data.withdrawalCode,
+        received_at: data.receivedAt,
+        status: data.status,
+        description: data.description,
+        observations: data.observations
+      });
+      if (error) throw error;
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar encomenda');
     }
   };
 
-  const handleDeleteConfirm = () => {
+  const handlePickupConfirm = async (name: string) => {
+    const now = new Date();
+    const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    try {
+      if (pickupId) {
+        const { error } = await supabase.from('packages').update({
+          status: 'Retirada',
+          picked_up_by: name,
+          picked_up_at: timestamp
+        }).eq('id', pickupId);
+        if (error) throw error;
+        setPickupId(null);
+      } else if (isBulkPickupOpen && selectedGroup) {
+        const packagesToUpdate = packages.filter(p => 
+          p.unit === selectedGroup.unit && 
+          (p.block ? p.block.toUpperCase() : 'OUTROS') === selectedGroup.block && 
+          p.status === 'Aguardando Retirada'
+        );
+        const ids = packagesToUpdate.map(p => p.id);
+        
+        const { error } = await supabase.from('packages').update({
+          status: 'Retirada',
+          picked_up_by: name,
+          picked_up_at: timestamp
+        }).in('id', ids);
+        
+        if (error) throw error;
+        setIsBulkPickupOpen(false);
+        setSelectedGroup(null);
+      }
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao registrar retirada');
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
     if (deleteId) {
-      setPackages(prev => prev.filter(p => p.id !== deleteId));
+      const { error } = await supabase.from('packages').delete().eq('id', deleteId);
+      if (error) alert('Erro ao excluir');
+      else onRefresh();
       setDeleteId(null);
     }
   };
@@ -147,19 +158,13 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     setSelectedGroup({ unit, block });
   };
 
-  const handleBackToList = () => {
-    setSelectedGroup(null);
-  };
-
   return (
     <div className="animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Encomendas</h1>
           <p className="text-slate-500 mt-1">Gestão de encomendas e correspondências</p>
         </div>
-        
         <button 
           onClick={() => setIsNewModalOpen(true)}
           className="bg-secondary hover:bg-purple-600 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-purple-200 transition-colors"
@@ -169,10 +174,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         </button>
       </div>
 
-      {/* Filters Section */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 space-y-4">
-        
-        {/* Row 1: Search Bar (Full Width) */}
         <div className="w-full relative">
            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
               <Search size={20} />
@@ -185,53 +187,35 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
               className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all text-base placeholder:text-slate-400"
             />
         </div>
-
-        {/* Row 2: Date & Tabs */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-           {/* Date Picker */}
            <div className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-slate-500 text-sm hover:border-slate-300 cursor-pointer bg-white w-full md:w-auto">
               <span>dd/mm/aaaa</span>
               <Calendar size={16} />
            </div>
-
-           {/* Status Tabs */}
            <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
-             <button
-               onClick={() => { setFilterStatus('todos'); setSelectedGroup(null); }}
-               className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                 filterStatus === 'todos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               Todos <span className="ml-1 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-full text-xs">{stats.total}</span>
-             </button>
-             <button
-               onClick={() => { setFilterStatus('pendentes'); setSelectedGroup(null); }}
-               className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                 filterStatus === 'pendentes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               Pendentes <span className="ml-1 px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs">{stats.pending}</span>
-             </button>
-             <button
-               onClick={() => { setFilterStatus('retiradas'); setSelectedGroup(null); }}
-               className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                 filterStatus === 'retiradas' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               Retiradas <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-600 rounded-full text-xs">{stats.pickedUp}</span>
-             </button>
+             {(['todos', 'pendentes', 'retiradas'] as const).map(status => (
+                <button
+                 key={status}
+                 onClick={() => { setFilterStatus(status); setSelectedGroup(null); }}
+                 className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize ${
+                   filterStatus === status ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                 }`}
+               >
+                 {status} <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs ${status === 'pendentes' ? 'bg-orange-100 text-orange-600' : 'bg-slate-200 text-slate-600'}`}>
+                   {status === 'todos' ? stats.total : status === 'pendentes' ? stats.pending : stats.pickedUp}
+                 </span>
+               </button>
+             ))}
            </div>
         </div>
       </div>
 
-      {/* Content Area */}
       {selectedGroup ? (
-        // Detailed Group View
         <div className="animate-in slide-in-from-right-4 duration-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
              <div className="flex items-center gap-4">
                <button 
-                 onClick={handleBackToList}
+                 onClick={() => setSelectedGroup(null)}
                  className="flex items-center gap-1 text-slate-500 hover:text-primary transition-colors pr-4 border-r border-slate-200"
                >
                  <ChevronLeft size={20} />
@@ -252,7 +236,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
                </button>
              )}
           </div>
-          
           <div className="space-y-4">
              {displayedPackages.map((pkg) => (
                 <PackageCard 
@@ -265,45 +248,37 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
           </div>
         </div>
       ) : (
-        // Standard View (List or Groups)
         <div className="space-y-6">
           {filterStatus === 'pendentes' && groupedPendingPackages.length > 0 ? (
-            // Grouped View By Block
             groupedPendingPackages.map((blockGroup) => (
               <div key={blockGroup.blockName} className="animate-in fade-in duration-300">
-                
-                {/* Block Header */}
                 <div className="flex items-center gap-3 mb-3 ml-1">
                    <div className="p-1.5 bg-slate-200 rounded text-slate-600">
                       <Box size={16} />
                    </div>
                    <h3 className="text-lg font-bold text-slate-700">
                      BLOCO {blockGroup.blockName} 
-                     <span className="text-sm font-normal text-slate-500 ml-2">
-                       ({blockGroup.totalInBlock} encomendas)
-                     </span>
+                     <span className="text-sm font-normal text-slate-500 ml-2">({blockGroup.totalInBlock} encomendas)</span>
                    </h3>
                 </div>
-                
-                {/* Unit Grid for this Block */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                    {blockGroup.unitGroups.map((group) => (
                       <div 
                         key={`${group.block}-${group.unit}`}
                         onClick={() => handleGroupClick(group.unit, group.block)}
-                        className="bg-white rounded-xl p-5 shadow-sm border border-slate-100 border-l-4 border-l-orange-500 flex justify-between items-center cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group"
+                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 border-l-4 border-l-orange-500 flex justify-between items-center cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group gap-3"
                       >
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold text-slate-900 truncate">
                             Unidade {group.unit}
                             {group.block !== 'OUTROS' && <span className="ml-1">- Bloco {group.block}</span>}
                           </h3>
-                          <p className="text-slate-500 text-sm font-medium">
+                          <p className="text-slate-500 text-xs font-medium mt-0.5">
                             {group.count} {group.count === 1 ? 'pendente' : 'pendentes'}
                           </p>
                         </div>
-                        <div className="w-9 h-9 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-100 transition-colors">
-                          <ArrowRight size={18} />
+                        <div className="w-8 h-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-100 transition-colors shrink-0">
+                          <ArrowRight size={16} />
                         </div>
                       </div>
                    ))}
@@ -311,7 +286,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
               </div>
             ))
           ) : displayedPackages.length > 0 ? (
-             // Standard List View (Todos/Retiradas)
              <div className="space-y-4">
                {displayedPackages.map((pkg) => (
                 <PackageCard 
@@ -323,7 +297,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
               ))}
              </div>
           ) : (
-            // Empty State
             <div className="py-12 text-center text-slate-400 bg-white rounded-xl border border-slate-100 border-dashed">
               <p>Nenhuma encomenda encontrada.</p>
             </div>
@@ -331,7 +304,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         </div>
       )}
 
-      {/* Modals */}
       <PackageModal 
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
@@ -340,7 +312,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         companies={companies}
       />
 
-      {/* Single Pickup Modal */}
       <PickupModal
         isOpen={!!pickupId}
         onClose={() => setPickupId(null)}
@@ -349,7 +320,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         itemCount={1}
       />
 
-      {/* Bulk Pickup Modal */}
       <PickupModal
         isOpen={isBulkPickupOpen}
         onClose={() => setIsBulkPickupOpen(false)}
@@ -357,7 +327,6 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         itemCount={displayedPackages.length}
       />
 
-      {/* Delete Confirmation */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
@@ -367,21 +336,11 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Encomenda</h3>
               <p className="text-slate-500 mb-6 text-sm">
-                Tem certeza que deseja excluir esta encomenda? Esta ação não pode ser desfeita.
+                Tem certeza que deseja excluir esta encomenda?
               </p>
               <div className="flex items-center gap-3 w-full">
-                <button 
-                  onClick={() => setDeleteId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleDeleteConfirm}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
-                >
-                  Excluir
-                </button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50">Cancelar</button>
+                <button onClick={handleDeleteConfirm} className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg shadow-red-200">Excluir</button>
               </div>
             </div>
           </div>

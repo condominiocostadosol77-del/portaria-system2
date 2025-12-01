@@ -3,33 +3,27 @@ import { Plus, Search, Calendar, Truck, Package, AlertTriangle } from 'lucide-re
 import { DeliveryVisit, DeliveryDriver } from '../types';
 import { DeliveryVisitCard } from './DeliveryVisitCard';
 import { DeliveryVisitModal } from './DeliveryVisitModal';
+import { supabase } from '../lib/supabase';
 
 interface DeliveryVisitsPageProps {
   visits: DeliveryVisit[];
-  setVisits: React.Dispatch<React.SetStateAction<DeliveryVisit[]>>;
+  setVisits?: React.Dispatch<React.SetStateAction<DeliveryVisit[]>>;
   drivers: DeliveryDriver[];
+  onRefresh: () => void;
 }
 
-export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, setVisits, drivers }) => {
+export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, drivers, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Stats Logic
   const today = new Date();
   const todayStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth()+1).toString().padStart(2, '0')}/${today.getFullYear()}`;
   
-  // Note: For a real app, strict date parsing is needed. 
-  // Here we do a simple string match for demonstration or "all time" if matching logic isn't perfect
   const visitsToday = visits.filter(v => v.entryTime.includes(todayStr)).length;
-  const packagesToday = visits
-    .filter(v => v.entryTime.includes(todayStr))
-    .reduce((acc, curr) => acc + curr.packageCount, 0);
+  const packagesToday = visits.filter(v => v.entryTime.includes(todayStr)).reduce((acc, curr) => acc + curr.packageCount, 0);
 
-  // Filter Logic
   const filteredVisits = useMemo(() => {
     return visits.filter(v => {
       return (
@@ -40,7 +34,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
     });
   }, [visits, searchTerm]);
 
-  // Handlers
   const handleAddNew = () => {
     setEditingId(null);
     setIsModalOpen(true);
@@ -51,34 +44,47 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (data: Omit<DeliveryVisit, 'id' | 'entryTime'>) => {
-    if (editingId) {
-      // Edit existing
-      setVisits(prev => prev.map(v => 
-        v.id === editingId ? { ...v, ...data } : v
-      ));
-    } else {
-      // Create new
+  const handleSubmit = async (data: Omit<DeliveryVisit, 'id' | 'entryTime'>) => {
+    try {
       const now = new Date();
       const entryTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-      const newVisit: DeliveryVisit = {
-        id: Math.random().toString(36).substr(2, 9),
-        entryTime,
-        ...data
+      const payload = {
+        driver_id: data.driverId,
+        driver_name: data.driverName,
+        company_name: data.companyName,
+        package_count: data.packageCount,
+        shift: data.shift,
+        observations: data.observations
       };
-      setVisits([newVisit, ...visits]);
+
+      if (editingId) {
+        const { error } = await supabase.from('delivery_visits').update(payload).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('delivery_visits').insert({
+          ...payload,
+          entry_time: entryTime
+        });
+        if (error) throw error;
+      }
+      onRefresh();
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar visita');
     }
-    setIsModalOpen(false);
   };
 
   const handleDelete = (id: string) => {
     setDeleteId(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteId) {
-      setVisits(prev => prev.filter(v => v.id !== deleteId));
+      const { error } = await supabase.from('delivery_visits').delete().eq('id', deleteId);
+      if (error) alert('Erro ao excluir');
+      else onRefresh();
       setDeleteId(null);
     }
   };
@@ -87,13 +93,11 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
 
   return (
     <div className="animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Visitas de Entregadores</h1>
           <p className="text-slate-500 mt-1">Registro de visitas e entregas</p>
         </div>
-        
         <button 
           onClick={handleAddNew}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-blue-100 transition-colors"
@@ -103,7 +107,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         </button>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
            <div>
@@ -114,7 +117,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
              <Calendar size={20} />
            </div>
         </div>
-        
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
            <div>
              <p className="text-xs text-slate-500 font-medium uppercase mb-1">Total de Encomendas</p>
@@ -126,7 +128,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         </div>
       </div>
 
-      {/* Search Bar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6">
         <div className="relative w-full">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -142,7 +143,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         </div>
       </div>
 
-      {/* Grid List */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredVisits.length > 0 ? (
           filteredVisits.map((visit) => (
@@ -163,7 +163,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         )}
       </div>
 
-      {/* Form Modal */}
       <DeliveryVisitModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -172,7 +171,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         initialData={editingVisit}
       />
 
-      {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
@@ -181,22 +179,9 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
                 <AlertTriangle size={24} />
               </div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Visita</h3>
-              <p className="text-slate-500 mb-6 text-sm">
-                Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.
-              </p>
               <div className="flex items-center gap-3 w-full">
-                <button 
-                  onClick={() => setDeleteId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmDelete}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
-                >
-                  Excluir
-                </button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50">Cancelar</button>
+                <button onClick={confirmDelete} className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium shadow-lg shadow-red-200">Excluir</button>
               </div>
             </div>
           </div>
