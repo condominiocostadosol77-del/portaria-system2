@@ -50,7 +50,7 @@ const App: React.FC = () => {
   const handleLogin = (employeeName: string) => {
     setCurrentUser({
       name: employeeName,
-      role: 'OPERADOR' // Assuming everyone logging in is an Operator for now
+      role: employeeName === 'Administrador' ? 'ADMINISTRADOR' : 'OPERADOR'
     });
     setIsAuthenticated(true);
   };
