@@ -1,0 +1,196 @@
+import React, { useState, useMemo } from 'react';
+import { Plus, Search, Calendar, Users, AlertTriangle } from 'lucide-react';
+import { Visitor, Resident } from '../types';
+import { VisitorCard } from './VisitorCard';
+import { VisitorModal } from './VisitorModal';
+
+interface VisitorsPageProps {
+  visitors: Visitor[];
+  setVisitors: React.Dispatch<React.SetStateAction<Visitor[]>>;
+  residents: Resident[];
+}
+
+export const VisitorsPage: React.FC<VisitorsPageProps> = ({ visitors, setVisitors, residents }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'todos' | 'no_condominio' | 'saiu'>('todos');
+  
+  // Modals
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Filter Logic
+  const filteredVisitors = useMemo(() => {
+    return visitors.filter(v => {
+      const matchesSearch = 
+        v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (v.document && v.document.includes(searchTerm)) ||
+        v.unit.includes(searchTerm) ||
+        (v.residentName && v.residentName.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      if (filterStatus === 'no_condominio') return matchesSearch && v.status === 'no_condominio';
+      if (filterStatus === 'saiu') return matchesSearch && v.status === 'saiu';
+      return matchesSearch;
+    });
+  }, [visitors, searchTerm, filterStatus]);
+
+  // Handlers
+  const handleCreate = (data: Omit<Visitor, 'id' | 'status' | 'entryTime' | 'exitTime'>) => {
+    const now = new Date();
+    const entryTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    const newVisitor: Visitor = {
+      id: Math.random().toString(36).substr(2, 9),
+      status: 'no_condominio',
+      entryTime,
+      ...data
+    };
+
+    setVisitors([newVisitor, ...visitors]);
+  };
+
+  const handleExit = (id: string) => {
+    const now = new Date();
+    const exitTime = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    setVisitors(prev => prev.map(v => 
+      v.id === id ? { ...v, status: 'saiu', exitTime } : v
+    ));
+  };
+
+  const handleDelete = (id: string) => {
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteId) {
+      setVisitors(prev => prev.filter(v => v.id !== deleteId));
+      setDeleteId(null);
+    }
+  };
+
+  return (
+    <div className="animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Visitantes</h1>
+          <p className="text-slate-500 mt-1">Controle de entrada e saída de visitantes</p>
+        </div>
+        
+        <button 
+          onClick={() => setIsNewModalOpen(true)}
+          className="bg-[#0f766e] hover:bg-[#0d9488] text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-teal-100 transition-colors"
+        >
+          <Plus size={18} />
+          <span>Registrar Visitante</span>
+        </button>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 space-y-4">
+        
+        {/* Search */}
+        <div className="w-full relative">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <Search size={18} />
+          </div>
+          <input 
+            type="text" 
+            placeholder="Buscar por nome, documento, unidade ou morador..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-teal-500/20 transition-all text-sm placeholder:text-slate-400"
+          />
+        </div>
+
+        {/* Status Tabs */}
+        <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-fit overflow-x-auto">
+          <button
+            onClick={() => setFilterStatus('todos')}
+            className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+              filterStatus === 'todos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Todos
+          </button>
+          <button
+            onClick={() => setFilterStatus('no_condominio')}
+            className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+              filterStatus === 'no_condominio' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            No Condomínio
+          </button>
+          <button
+            onClick={() => setFilterStatus('saiu')}
+            className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+              filterStatus === 'saiu' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Saíram
+          </button>
+        </div>
+      </div>
+
+      {/* Grid List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {filteredVisitors.length > 0 ? (
+          filteredVisitors.map((visitor) => (
+            <VisitorCard 
+              key={visitor.id} 
+              data={visitor} 
+              onExit={handleExit}
+              onDelete={handleDelete}
+            />
+          ))
+        ) : (
+          <div className="col-span-full py-16 text-center bg-white rounded-xl border border-slate-100 flex flex-col items-center justify-center">
+             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
+               <Users size={32} />
+             </div>
+             <p className="text-slate-500 font-medium">Nenhum visitante encontrado</p>
+          </div>
+        )}
+      </div>
+
+      {/* Form Modal */}
+      <VisitorModal 
+        isOpen={isNewModalOpen}
+        onClose={() => setIsNewModalOpen(false)}
+        onSubmit={handleCreate}
+        residents={residents}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Visitante</h3>
+              <p className="text-slate-500 mb-6 text-sm">
+                Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex items-center gap-3 w-full">
+                <button 
+                  onClick={() => setDeleteId(null)}
+                  className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors shadow-lg shadow-red-200"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
