@@ -55,18 +55,45 @@ const App: React.FC = () => {
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isNotepadMinimized, setIsNotepadMinimized] = useState(false);
 
-  // --- SUPABASE DATA FETCHING ---
-  const fetchData = async () => {
-    setIsLoading(true);
+  // --- SUPABASE DATA FETCHING (OPTIMIZED) ---
+  const fetchData = async (isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
+    
     try {
-      // Residents
-      const { data: resData } = await supabase.from('residents').select('*');
-      if (resData) setResidents(resData);
+      // Execute all requests in parallel using Promise.all
+      // This drastically reduces load time compared to sequential awaits
+      const [
+        residentsRes,
+        packagesRes,
+        companiesRes,
+        employeesRes,
+        occurrencesRes,
+        receivedItemsRes,
+        materialsRes,
+        visitorsRes,
+        timeRecordsRes,
+        deliveryDriversRes,
+        deliveryVisitsRes
+      ] = await Promise.all([
+        supabase.from('residents').select('*'),
+        supabase.from('packages').select('*').order('created_at', { ascending: false }),
+        supabase.from('companies').select('*'),
+        supabase.from('employees').select('*'),
+        supabase.from('occurrences').select('*').order('created_at', { ascending: false }),
+        supabase.from('received_items').select('*').order('created_at', { ascending: false }),
+        supabase.from('borrowed_materials').select('*').order('created_at', { ascending: false }),
+        supabase.from('visitors').select('*').order('created_at', { ascending: false }),
+        supabase.from('time_records').select('*').order('created_at', { ascending: false }),
+        supabase.from('delivery_drivers').select('*'),
+        supabase.from('delivery_visits').select('*').order('created_at', { ascending: false })
+      ]);
 
-      // Packages
-      const { data: pkgData } = await supabase.from('packages').select('*').order('created_at', { ascending: false });
-      if (pkgData) {
-        setPackages(pkgData.map(p => ({
+      // --- Process Residents ---
+      if (residentsRes.data) setResidents(residentsRes.data);
+
+      // --- Process Packages ---
+      if (packagesRes.data) {
+        setPackages(packagesRes.data.map(p => ({
           ...p,
           recipientName: p.recipient_name,
           trackingCode: p.tracking_code,
@@ -77,14 +104,12 @@ const App: React.FC = () => {
         })));
       }
 
-      // Companies
-      const { data: compData } = await supabase.from('companies').select('*');
-      if (compData) setCompanies(compData);
+      // --- Process Companies ---
+      if (companiesRes.data) setCompanies(companiesRes.data);
 
-      // Employees
-      const { data: empData } = await supabase.from('employees').select('*');
-      if (empData) {
-        setEmployees(empData.map(e => ({
+      // --- Process Employees ---
+      if (employeesRes.data) {
+        setEmployees(employeesRes.data.map(e => ({
           ...e,
           entryTime: e.entry_time,
           exitTime: e.exit_time,
@@ -93,20 +118,18 @@ const App: React.FC = () => {
         })));
       }
 
-      // Occurrences
-      const { data: occData } = await supabase.from('occurrences').select('*').order('created_at', { ascending: false });
-      if (occData) {
-        setOccurrences(occData.map(o => ({
+      // --- Process Occurrences ---
+      if (occurrencesRes.data) {
+        setOccurrences(occurrencesRes.data.map(o => ({
           ...o,
           outgoingEmployeeName: o.outgoing_employee_name,
           incomingEmployeeName: o.incoming_employee_name,
         })));
       }
 
-      // Received Items
-      const { data: riData } = await supabase.from('received_items').select('*').order('created_at', { ascending: false });
-      if (riData) {
-        setReceivedItems(riData.map(i => ({
+      // --- Process Received Items ---
+      if (receivedItemsRes.data) {
+        setReceivedItems(receivedItemsRes.data.map(i => ({
           ...i,
           operationType: i.operation_type,
           recipientName: i.recipient_name,
@@ -118,10 +141,9 @@ const App: React.FC = () => {
         })));
       }
 
-      // Materials
-      const { data: matData } = await supabase.from('borrowed_materials').select('*').order('created_at', { ascending: false });
-      if (matData) {
-        setMaterials(matData.map(m => ({
+      // --- Process Materials ---
+      if (materialsRes.data) {
+        setMaterials(materialsRes.data.map(m => ({
           ...m,
           materialName: m.material_name,
           borrowerType: m.borrower_type,
@@ -131,10 +153,9 @@ const App: React.FC = () => {
         })));
       }
 
-      // Visitors
-      const { data: visData } = await supabase.from('visitors').select('*').order('created_at', { ascending: false });
-      if (visData) {
-        setVisitors(visData.map(v => ({
+      // --- Process Visitors ---
+      if (visitorsRes.data) {
+        setVisitors(visitorsRes.data.map(v => ({
           ...v,
           residentName: v.resident_name,
           residentId: v.resident_id,
@@ -143,10 +164,9 @@ const App: React.FC = () => {
         })));
       }
 
-      // Time Records
-      const { data: timeData } = await supabase.from('time_records').select('*').order('created_at', { ascending: false });
-      if (timeData) {
-        setTimeRecords(timeData.map(t => ({
+      // --- Process Time Records ---
+      if (timeRecordsRes.data) {
+        setTimeRecords(timeRecordsRes.data.map(t => ({
           ...t,
           employeeId: t.employee_id,
           employeeName: t.employee_name,
@@ -155,20 +175,18 @@ const App: React.FC = () => {
         })));
       }
 
-      // Delivery Drivers
-      const { data: drvData } = await supabase.from('delivery_drivers').select('*');
-      if (drvData) {
-        setDeliveryDrivers(drvData.map(d => ({
+      // --- Process Delivery Drivers ---
+      if (deliveryDriversRes.data) {
+        setDeliveryDrivers(deliveryDriversRes.data.map(d => ({
           ...d,
           companyId: d.company_id,
           companyName: d.company_name
         })));
       }
 
-      // Delivery Visits
-      const { data: drvVisData } = await supabase.from('delivery_visits').select('*').order('created_at', { ascending: false });
-      if (drvVisData) {
-        setDeliveryVisits(drvVisData.map(v => ({
+      // --- Process Delivery Visits ---
+      if (deliveryVisitsRes.data) {
+        setDeliveryVisits(deliveryVisitsRes.data.map(v => ({
           ...v,
           driverId: v.driver_id,
           driverName: v.driver_name,
@@ -180,10 +198,8 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Error fetching data:", error);
-      // alert("Erro ao carregar dados do sistema. Verifique a conexão."); 
-      // Commented out alert to avoid spam on initial load if network is slow, handled by UI state mostly
     } finally {
-      setIsLoading(false);
+      if (!isBackground) setIsLoading(false);
     }
   };
 
@@ -191,6 +207,10 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Handler for background refresh (used after Create/Update/Delete)
+  // This prevents the full screen loader from appearing, making the app feel faster
+  const handleBackgroundRefresh = () => fetchData(true);
 
   // Auth Handlers
   const handleLogin = (employeeName: string) => {
@@ -201,7 +221,6 @@ const App: React.FC = () => {
     
     setCurrentUser(user);
     setIsAuthenticated(true);
-    // Persist to localStorage
     localStorage.setItem('portaria_user', JSON.stringify(user));
   };
 
@@ -214,7 +233,6 @@ const App: React.FC = () => {
     setIsLogoutModalOpen(false);
     setIsSidebarOpen(false);
     setActivePage('dashboard');
-    // Clear persistence
     localStorage.removeItem('portaria_user');
   };
 
@@ -232,7 +250,7 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      fetchData(); // Refresh data
+      handleBackgroundRefresh(); 
       setActivePage('ocorrencias');
     } catch (err) {
       console.error(err);
@@ -293,66 +311,66 @@ const App: React.FC = () => {
         ) : activePage === 'moradores' ? (
           <ResidentsPage 
             residents={residents}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'encomendas' ? (
           <PackagesPage 
             residents={residents}
             packages={packages}
             companies={companies}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'recebidos' ? (
           <ReceivedItemsPage 
             items={receivedItems}
             residents={residents}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'materiais' ? (
           <MaterialsPage 
             materials={materials}
             residents={residents}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'visitantes' ? (
           <VisitorsPage 
             visitors={visitors}
             residents={residents}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'ponto' ? (
           <TimeSheetPage 
             records={timeRecords}
             employees={employees}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'empresas' ? (
           <CompaniesPage 
             companies={companies}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'entregadores' ? (
           <DeliveryDriversPage 
             drivers={deliveryDrivers}
             companies={companies}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'visitas' ? (
           <DeliveryVisitsPage
             visits={deliveryVisits}
             drivers={deliveryDrivers}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'funcionarios' ? (
           <EmployeesPage 
             employees={employees}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
           />
         ) : activePage === 'ocorrencias' ? (
           <OccurrencesPage 
             occurrences={occurrences}
             employees={employees}
-            onRefresh={fetchData}
+            onRefresh={handleBackgroundRefresh}
             onOpenNotepad={() => {
               setIsNotepadOpen(true);
               setIsNotepadMinimized(false);
