@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Menu, Loader2 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -20,8 +20,11 @@ import { MENU_ITEMS, CURRENT_USER } from './constants';
 import { Resident, PackageItem, Company, Employee, Occurrence, ReceivedItem, BorrowedMaterial, Visitor, TimeRecord, DeliveryDriver, DeliveryVisit, UserProfile } from './types';
 import { supabase } from './lib/supabase';
 
+// Define escopos para atualização inteligente
+type DataScope = 'all' | 'residents' | 'packages' | 'companies' | 'employees' | 'occurrences' | 'received_items' | 'materials' | 'visitors' | 'time_records' | 'delivery_drivers' | 'delivery_visits';
+
 const App: React.FC = () => {
-  // Auth State - Initializing from localStorage to persist login
+  // Auth State
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     const savedUser = localStorage.getItem('portaria_user');
     return savedUser ? JSON.parse(savedUser) : CURRENT_USER;
@@ -55,145 +58,199 @@ const App: React.FC = () => {
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isNotepadMinimized, setIsNotepadMinimized] = useState(false);
 
-  // --- SUPABASE DATA FETCHING (OPTIMIZED) ---
-  const fetchData = async (isBackground = false) => {
+  // --- BUSCA DE DADOS OTIMIZADA (GRANULAR) ---
+  // Aceita um array de escopos. Se passar ['all'], busca tudo.
+  // Se passar ['residents'], busca apenas residentes e mantém o resto cacheado.
+  const fetchData = useCallback(async (scopes: DataScope[] = ['all'], isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     
+    const shouldFetch = (scope: DataScope) => scopes.includes('all') || scopes.includes(scope);
+
     try {
-      // Execute all requests in parallel using Promise.all
-      // This drastically reduces load time compared to sequential awaits
-      const [
-        residentsRes,
-        packagesRes,
-        companiesRes,
-        employeesRes,
-        occurrencesRes,
-        receivedItemsRes,
-        materialsRes,
-        visitorsRes,
-        timeRecordsRes,
-        deliveryDriversRes,
-        deliveryVisitsRes
-      ] = await Promise.all([
-        supabase.from('residents').select('*'),
-        supabase.from('packages').select('*').order('created_at', { ascending: false }),
-        supabase.from('companies').select('*'),
-        supabase.from('employees').select('*'),
-        supabase.from('occurrences').select('*').order('created_at', { ascending: false }),
-        supabase.from('received_items').select('*').order('created_at', { ascending: false }),
-        supabase.from('borrowed_materials').select('*').order('created_at', { ascending: false }),
-        supabase.from('visitors').select('*').order('created_at', { ascending: false }),
-        supabase.from('time_records').select('*').order('created_at', { ascending: false }),
-        supabase.from('delivery_drivers').select('*'),
-        supabase.from('delivery_visits').select('*').order('created_at', { ascending: false })
-      ]);
+      const promises: Promise<any>[] = [];
+      const fetchMap: Record<string, number> = {}; // Mapeia o resultado da promise para o estado correto
 
-      // --- Process Residents ---
-      if (residentsRes.data) setResidents(residentsRes.data);
+      let pIndex = 0;
 
-      // --- Process Packages ---
-      if (packagesRes.data) {
-        setPackages(packagesRes.data.map(p => ({
-          ...p,
-          recipientName: p.recipient_name,
-          trackingCode: p.tracking_code,
-          withdrawalCode: p.withdrawal_code,
-          receivedAt: p.received_at,
-          pickedUpBy: p.picked_up_by,
-          pickedUpAt: p.picked_up_at
-        })));
+      // Constrói o array de promessas dinamicamente
+      if (shouldFetch('residents')) {
+        promises.push(supabase.from('residents').select('*'));
+        fetchMap['residents'] = pIndex++;
+      }
+      if (shouldFetch('packages')) {
+        promises.push(supabase.from('packages').select('*').order('created_at', { ascending: false }));
+        fetchMap['packages'] = pIndex++;
+      }
+      if (shouldFetch('companies')) {
+        promises.push(supabase.from('companies').select('*'));
+        fetchMap['companies'] = pIndex++;
+      }
+      if (shouldFetch('employees')) {
+        promises.push(supabase.from('employees').select('*'));
+        fetchMap['employees'] = pIndex++;
+      }
+      if (shouldFetch('occurrences')) {
+        promises.push(supabase.from('occurrences').select('*').order('created_at', { ascending: false }));
+        fetchMap['occurrences'] = pIndex++;
+      }
+      if (shouldFetch('received_items')) {
+        promises.push(supabase.from('received_items').select('*').order('created_at', { ascending: false }));
+        fetchMap['received_items'] = pIndex++;
+      }
+      if (shouldFetch('materials')) {
+        promises.push(supabase.from('borrowed_materials').select('*').order('created_at', { ascending: false }));
+        fetchMap['materials'] = pIndex++;
+      }
+      if (shouldFetch('visitors')) {
+        promises.push(supabase.from('visitors').select('*').order('created_at', { ascending: false }));
+        fetchMap['visitors'] = pIndex++;
+      }
+      if (shouldFetch('time_records')) {
+        promises.push(supabase.from('time_records').select('*').order('created_at', { ascending: false }));
+        fetchMap['time_records'] = pIndex++;
+      }
+      if (shouldFetch('delivery_drivers')) {
+        promises.push(supabase.from('delivery_drivers').select('*'));
+        fetchMap['delivery_drivers'] = pIndex++;
+      }
+      if (shouldFetch('delivery_visits')) {
+        promises.push(supabase.from('delivery_visits').select('*').order('created_at', { ascending: false }));
+        fetchMap['delivery_visits'] = pIndex++;
       }
 
-      // --- Process Companies ---
-      if (companiesRes.data) setCompanies(companiesRes.data);
+      // Executa apenas as requisições necessárias em paralelo
+      const results = await Promise.all(promises);
 
-      // --- Process Employees ---
-      if (employeesRes.data) {
-        setEmployees(employeesRes.data.map(e => ({
-          ...e,
-          entryTime: e.entry_time,
-          exitTime: e.exit_time,
-          admissionDate: e.admission_date,
-          photoUrl: e.photo_url
-        })));
+      // --- Processa os Resultados ---
+      
+      if (fetchMap['residents'] !== undefined) {
+        const res = results[fetchMap['residents']];
+        if (res.data) setResidents(res.data);
       }
 
-      // --- Process Occurrences ---
-      if (occurrencesRes.data) {
-        setOccurrences(occurrencesRes.data.map(o => ({
-          ...o,
-          outgoingEmployeeName: o.outgoing_employee_name,
-          incomingEmployeeName: o.incoming_employee_name,
-        })));
+      if (fetchMap['packages'] !== undefined) {
+        const res = results[fetchMap['packages']];
+        if (res.data) {
+          setPackages(res.data.map((p: any) => ({
+            ...p,
+            recipientName: p.recipient_name,
+            trackingCode: p.tracking_code,
+            withdrawalCode: p.withdrawal_code,
+            receivedAt: p.received_at,
+            pickedUpBy: p.picked_up_by,
+            pickedUpAt: p.picked_up_at
+          })));
+        }
       }
 
-      // --- Process Received Items ---
-      if (receivedItemsRes.data) {
-        setReceivedItems(receivedItemsRes.data.map(i => ({
-          ...i,
-          operationType: i.operation_type,
-          recipientName: i.recipient_name,
-          residentId: i.resident_id,
-          leftBy: i.left_by,
-          receivedAt: i.received_at,
-          pickedUpBy: i.picked_up_by,
-          pickedUpAt: i.picked_up_at
-        })));
+      if (fetchMap['companies'] !== undefined) {
+        const res = results[fetchMap['companies']];
+        if (res.data) setCompanies(res.data);
       }
 
-      // --- Process Materials ---
-      if (materialsRes.data) {
-        setMaterials(materialsRes.data.map(m => ({
-          ...m,
-          materialName: m.material_name,
-          borrowerType: m.borrower_type,
-          borrowerName: m.borrower_name,
-          loanDate: m.loan_date,
-          returnDate: m.return_date
-        })));
+      if (fetchMap['employees'] !== undefined) {
+        const res = results[fetchMap['employees']];
+        if (res.data) {
+          setEmployees(res.data.map((e: any) => ({
+            ...e,
+            entryTime: e.entry_time,
+            exitTime: e.exit_time,
+            admissionDate: e.admission_date,
+            photoUrl: e.photo_url
+          })));
+        }
       }
 
-      // --- Process Visitors ---
-      if (visitorsRes.data) {
-        setVisitors(visitorsRes.data.map(v => ({
-          ...v,
-          residentName: v.resident_name,
-          residentId: v.resident_id,
-          entryTime: v.entry_time,
-          exitTime: v.exit_time
-        })));
+      if (fetchMap['occurrences'] !== undefined) {
+        const res = results[fetchMap['occurrences']];
+        if (res.data) {
+          setOccurrences(res.data.map((o: any) => ({
+            ...o,
+            outgoingEmployeeName: o.outgoing_employee_name,
+            incomingEmployeeName: o.incoming_employee_name,
+          })));
+        }
       }
 
-      // --- Process Time Records ---
-      if (timeRecordsRes.data) {
-        setTimeRecords(timeRecordsRes.data.map(t => ({
-          ...t,
-          employeeId: t.employee_id,
-          employeeName: t.employee_name,
-          entryTime: t.entry_time,
-          exitTime: t.exit_time
-        })));
+      if (fetchMap['received_items'] !== undefined) {
+        const res = results[fetchMap['received_items']];
+        if (res.data) {
+          setReceivedItems(res.data.map((i: any) => ({
+            ...i,
+            operationType: i.operation_type,
+            recipientName: i.recipient_name,
+            residentId: i.resident_id,
+            leftBy: i.left_by,
+            receivedAt: i.received_at,
+            pickedUpBy: i.picked_up_by,
+            pickedUpAt: i.picked_up_at
+          })));
+        }
       }
 
-      // --- Process Delivery Drivers ---
-      if (deliveryDriversRes.data) {
-        setDeliveryDrivers(deliveryDriversRes.data.map(d => ({
-          ...d,
-          companyId: d.company_id,
-          companyName: d.company_name
-        })));
+      if (fetchMap['materials'] !== undefined) {
+        const res = results[fetchMap['materials']];
+        if (res.data) {
+          setMaterials(res.data.map((m: any) => ({
+            ...m,
+            materialName: m.material_name,
+            borrowerType: m.borrower_type,
+            borrowerName: m.borrower_name,
+            loanDate: m.loan_date,
+            returnDate: m.return_date
+          })));
+        }
       }
 
-      // --- Process Delivery Visits ---
-      if (deliveryVisitsRes.data) {
-        setDeliveryVisits(deliveryVisitsRes.data.map(v => ({
-          ...v,
-          driverId: v.driver_id,
-          driverName: v.driver_name,
-          companyName: v.company_name,
-          entryTime: v.entry_time,
-          packageCount: v.package_count
-        })));
+      if (fetchMap['visitors'] !== undefined) {
+        const res = results[fetchMap['visitors']];
+        if (res.data) {
+          setVisitors(res.data.map((v: any) => ({
+            ...v,
+            residentName: v.resident_name,
+            residentId: v.resident_id,
+            entryTime: v.entry_time,
+            exitTime: v.exit_time
+          })));
+        }
+      }
+
+      if (fetchMap['time_records'] !== undefined) {
+        const res = results[fetchMap['time_records']];
+        if (res.data) {
+          setTimeRecords(res.data.map((t: any) => ({
+            ...t,
+            employeeId: t.employee_id,
+            employeeName: t.employee_name,
+            entryTime: t.entry_time,
+            exitTime: t.exit_time
+          })));
+        }
+      }
+
+      if (fetchMap['delivery_drivers'] !== undefined) {
+        const res = results[fetchMap['delivery_drivers']];
+        if (res.data) {
+          setDeliveryDrivers(res.data.map((d: any) => ({
+            ...d,
+            companyId: d.company_id,
+            companyName: d.company_name
+          })));
+        }
+      }
+
+      if (fetchMap['delivery_visits'] !== undefined) {
+        const res = results[fetchMap['delivery_visits']];
+        if (res.data) {
+          setDeliveryVisits(res.data.map((v: any) => ({
+            ...v,
+            driverId: v.driver_id,
+            driverName: v.driver_name,
+            companyName: v.company_name,
+            entryTime: v.entry_time,
+            packageCount: v.package_count
+          })));
+        }
       }
 
     } catch (error) {
@@ -201,16 +258,12 @@ const App: React.FC = () => {
     } finally {
       if (!isBackground) setIsLoading(false);
     }
-  };
-
-  // Initial Fetch
-  useEffect(() => {
-    fetchData();
   }, []);
 
-  // Handler for background refresh (used after Create/Update/Delete)
-  // This prevents the full screen loader from appearing, making the app feel faster
-  const handleBackgroundRefresh = () => fetchData(true);
+  // Carga Inicial (Busca tudo na primeira vez)
+  useEffect(() => {
+    fetchData(['all']);
+  }, [fetchData]);
 
   // Auth Handlers
   const handleLogin = (employeeName: string) => {
@@ -250,7 +303,7 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      handleBackgroundRefresh(); 
+      fetchData(['occurrences'], true); // Atualiza apenas ocorrências
       setActivePage('ocorrencias');
     } catch (err) {
       console.error(err);
@@ -311,66 +364,66 @@ const App: React.FC = () => {
         ) : activePage === 'moradores' ? (
           <ResidentsPage 
             residents={residents}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['residents'], true)}
           />
         ) : activePage === 'encomendas' ? (
           <PackagesPage 
             residents={residents}
             packages={packages}
             companies={companies}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['packages'], true)}
           />
         ) : activePage === 'recebidos' ? (
           <ReceivedItemsPage 
             items={receivedItems}
             residents={residents}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['received_items'], true)}
           />
         ) : activePage === 'materiais' ? (
           <MaterialsPage 
             materials={materials}
             residents={residents}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['materials'], true)}
           />
         ) : activePage === 'visitantes' ? (
           <VisitorsPage 
             visitors={visitors}
             residents={residents}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['visitors'], true)}
           />
         ) : activePage === 'ponto' ? (
           <TimeSheetPage 
             records={timeRecords}
             employees={employees}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['time_records'], true)}
           />
         ) : activePage === 'empresas' ? (
           <CompaniesPage 
             companies={companies}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['companies'], true)}
           />
         ) : activePage === 'entregadores' ? (
           <DeliveryDriversPage 
             drivers={deliveryDrivers}
             companies={companies}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['delivery_drivers'], true)}
           />
         ) : activePage === 'visitas' ? (
           <DeliveryVisitsPage
             visits={deliveryVisits}
             drivers={deliveryDrivers}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['delivery_visits'], true)}
           />
         ) : activePage === 'funcionarios' ? (
           <EmployeesPage 
             employees={employees}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['employees'], true)}
           />
         ) : activePage === 'ocorrencias' ? (
           <OccurrencesPage 
             occurrences={occurrences}
             employees={employees}
-            onRefresh={handleBackgroundRefresh}
+            onRefresh={() => fetchData(['occurrences'], true)}
             onOpenNotepad={() => {
               setIsNotepadOpen(true);
               setIsNotepadMinimized(false);
