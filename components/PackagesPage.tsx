@@ -158,6 +158,78 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     setSelectedGroup({ unit, block });
   };
 
+  // Helper to determine block colors
+  const getBlockColorStyles = (blockName: string) => {
+    // Normalize to handle 'Bloco A' vs 'A' if necessary, mostly likely just single char
+    const char = blockName.replace('BLOCO ', '').trim().charAt(0).toUpperCase();
+    
+    switch (char) {
+      case 'A': return {
+        bg: 'bg-blue-50',
+        text: 'text-blue-700',
+        border: 'border-blue-200',
+        iconBg: 'bg-blue-50',
+        iconText: 'text-blue-600',
+        hoverIconBg: 'group-hover:bg-blue-100',
+        cardBorder: 'border-l-blue-500'
+      };
+      case 'B': return {
+        bg: 'bg-emerald-50',
+        text: 'text-emerald-700',
+        border: 'border-emerald-200',
+        iconBg: 'bg-emerald-50',
+        iconText: 'text-emerald-600',
+        hoverIconBg: 'group-hover:bg-emerald-100',
+        cardBorder: 'border-l-emerald-500'
+      };
+      case 'C': return {
+        bg: 'bg-purple-50',
+        text: 'text-purple-700',
+        border: 'border-purple-200',
+        iconBg: 'bg-purple-50',
+        iconText: 'text-purple-600',
+        hoverIconBg: 'group-hover:bg-purple-100',
+        cardBorder: 'border-l-purple-500'
+      };
+      case 'D': return {
+        bg: 'bg-orange-50',
+        text: 'text-orange-700',
+        border: 'border-orange-200',
+        iconBg: 'bg-orange-50',
+        iconText: 'text-orange-600',
+        hoverIconBg: 'group-hover:bg-orange-100',
+        cardBorder: 'border-l-orange-500'
+      };
+      case 'E': return {
+        bg: 'bg-pink-50',
+        text: 'text-pink-700',
+        border: 'border-pink-200',
+        iconBg: 'bg-pink-50',
+        iconText: 'text-pink-600',
+        hoverIconBg: 'group-hover:bg-pink-100',
+        cardBorder: 'border-l-pink-500'
+      };
+      case 'F': return {
+        bg: 'bg-cyan-50',
+        text: 'text-cyan-700',
+        border: 'border-cyan-200',
+        iconBg: 'bg-cyan-50',
+        iconText: 'text-cyan-600',
+        hoverIconBg: 'group-hover:bg-cyan-100',
+        cardBorder: 'border-l-cyan-500'
+      };
+      default: return {
+        bg: 'bg-slate-100',
+        text: 'text-slate-700',
+        border: 'border-slate-200',
+        iconBg: 'bg-slate-100',
+        iconText: 'text-slate-500',
+        hoverIconBg: 'group-hover:bg-slate-200',
+        cardBorder: 'border-l-slate-500'
+      };
+    }
+  };
+
   return (
     <div className="animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -250,41 +322,44 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
       ) : (
         <div className="space-y-6">
           {filterStatus === 'pendentes' && groupedPendingPackages.length > 0 ? (
-            groupedPendingPackages.map((blockGroup) => (
-              <div key={blockGroup.blockName} className="animate-in fade-in duration-300">
-                <div className="flex items-center gap-3 mb-3 ml-1">
-                   <div className="p-1.5 bg-slate-200 rounded text-slate-600">
-                      <Box size={16} />
-                   </div>
-                   <h3 className="text-lg font-bold text-slate-700">
-                     BLOCO {blockGroup.blockName} 
-                     <span className="text-sm font-normal text-slate-500 ml-2">({blockGroup.totalInBlock} encomendas)</span>
-                   </h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                   {blockGroup.unitGroups.map((group) => (
-                      <div 
-                        key={`${group.block}-${group.unit}`}
-                        onClick={() => handleGroupClick(group.unit, group.block)}
-                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 border-l-4 border-l-orange-500 flex justify-between items-center cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group gap-3"
-                      >
-                        <div className="min-w-0">
-                          <h3 className="text-base font-bold text-slate-900 truncate">
-                            Unidade {group.unit}
-                            {group.block !== 'OUTROS' && <span className="ml-1">- Bloco {group.block}</span>}
-                          </h3>
-                          <p className="text-slate-500 text-xs font-medium mt-0.5">
-                            {group.count} {group.count === 1 ? 'pendente' : 'pendentes'}
-                          </p>
+            groupedPendingPackages.map((blockGroup) => {
+              const styles = getBlockColorStyles(blockGroup.blockName);
+              return (
+                <div key={blockGroup.blockName} className="animate-in fade-in duration-300">
+                  <div className="flex items-center gap-3 mb-3 ml-1">
+                     <div className={`p-1.5 rounded ${styles.bg} ${styles.text}`}>
+                        <Box size={16} />
+                     </div>
+                     <h3 className={`text-lg font-bold ${styles.text}`}>
+                       BLOCO {blockGroup.blockName} 
+                       <span className="text-sm font-normal text-slate-500 ml-2">({blockGroup.totalInBlock} encomendas)</span>
+                     </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                     {blockGroup.unitGroups.map((group) => (
+                        <div 
+                          key={`${group.block}-${group.unit}`}
+                          onClick={() => handleGroupClick(group.unit, group.block)}
+                          className={`bg-white rounded-xl p-4 shadow-sm border border-slate-100 border-l-4 ${styles.cardBorder} flex justify-between items-center cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all group gap-3`}
+                        >
+                          <div className="min-w-0">
+                            <h3 className="text-base font-bold text-slate-900 truncate">
+                              Unidade {group.unit}
+                              {group.block !== 'OUTROS' && <span className="ml-1">- Bloco {group.block}</span>}
+                            </h3>
+                            <p className="text-slate-500 text-xs font-medium mt-0.5">
+                              {group.count} {group.count === 1 ? 'pendente' : 'pendentes'}
+                            </p>
+                          </div>
+                          <div className={`w-8 h-8 rounded-full ${styles.iconBg} ${styles.iconText} flex items-center justify-center ${styles.hoverIconBg} transition-colors shrink-0`}>
+                            <ArrowRight size={16} />
+                          </div>
                         </div>
-                        <div className="w-8 h-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-100 transition-colors shrink-0">
-                          <ArrowRight size={16} />
-                        </div>
-                      </div>
-                   ))}
+                     ))}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : displayedPackages.length > 0 ? (
              <div className="space-y-4">
                {displayedPackages.map((pkg) => (

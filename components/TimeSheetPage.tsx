@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Calendar, Trash2, Edit2, AlertTriangle, FilterX } from 'lucide-react';
+import { Plus, Search, Calendar, Trash2, Edit2, AlertTriangle, FilterX, FileDown, Download } from 'lucide-react';
 import { TimeRecord, Employee } from '../types';
 import { TimeSheetCard } from './TimeSheetCard';
 import { TimeSheetModal } from './TimeSheetModal';
@@ -77,6 +77,67 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
     setIsClearAllModalOpen(false);
   };
 
+  const handleExportPDF = () => {
+    if (filteredRecords.length === 0) {
+      alert("Não há registros para exportar.");
+      return;
+    }
+    
+    console.log("Iniciando impressão...");
+    // Change document title temporarily for the PDF filename
+    const originalTitle = document.title;
+    document.title = `Folha_Ponto_${new Date().toISOString().slice(0, 10)}`;
+    
+    // Add small delay to ensure browser handles the print command correctly
+    setTimeout(() => {
+      window.print();
+      document.title = originalTitle;
+    }, 100);
+  };
+
+  const handleExportCSV = () => {
+    if (filteredRecords.length === 0) {
+      alert("Não há registros para exportar.");
+      return;
+    }
+
+    // CSV Headers
+    const headers = ["Data", "Funcionario", "Turno", "Entrada", "Saida", "Tipo", "Observacoes"];
+    
+    // CSV Rows
+    const rows = filteredRecords.map(r => {
+      // Format date
+      const [y, m, d] = r.date.split('-');
+      const formattedDate = `${d}/${m}/${y}`;
+      
+      // Escape quotes for CSV safety
+      const obs = r.observations ? r.observations.replace(/"/g, '""') : "";
+      
+      return [
+        formattedDate,
+        `"${r.employeeName}"`,
+        r.shift,
+        r.entryTime,
+        r.exitTime,
+        r.type,
+        `"${obs}"`
+      ].join(",");
+    });
+
+    // Combine headers and rows
+    const csvContent = [headers.join(","), ...rows].join("\n");
+
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `folha_ponto_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleSubmit = async (data: Omit<TimeRecord, 'id' | 'employeeName'>) => {
     const employee = employees.find(e => e.id === data.employeeId);
     if (!employee) return;
@@ -110,9 +171,87 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
 
   const editingRecord = editingId ? records.find(r => r.id === editingId) : undefined;
 
+  // Print view calculation helpers
+  const calculateDuration = (entry: string, exit: string): number => {
+    if (!entry || !exit || entry === '--:--' || exit === '--:--') return 0;
+    const [h1, m1] = entry.split(':').map(Number);
+    const [h2, m2] = exit.split(':').map(Number);
+    
+    if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return 0;
+
+    let minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+    if (minutes < 0) minutes += 24 * 60;
+    return minutes;
+  };
+
+  const formatDuration = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h ${m}min`;
+  };
+
+  const totalMinutes = useMemo(() => {
+    return filteredRecords.reduce((acc, rec) => acc + calculateDuration(rec.entryTime, rec.exitTime), 0);
+  }, [filteredRecords]);
+
+  // Context for print title
+  const printSubtitle = filterEmployeeId !== 'todos' 
+    ? employees.find(e => e.id === filterEmployeeId)?.name 
+    : 'Todos os Funcionários';
+
   return (
     <div className="animate-in fade-in duration-300">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      
+      {/* PRINT LAYOUT */}
+      <div className="print-only font-sans text-black">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">Relatório de Folha de Ponto</h1>
+          <h2 className="text-xl text-gray-600 mb-2">{printSubtitle}</h2>
+          <p className="text-sm text-gray-500">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
+        </div>
+
+        <table className="w-full text-sm border border-gray-300 border-collapse">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-gray-300 px-3 py-2 text-left font-bold w-24">Data</th>
+              <th className="border border-gray-300 px-3 py-2 text-left font-bold">Funcionário</th>
+              <th className="border border-gray-300 px-3 py-2 text-left font-bold w-24">Turno</th>
+              <th className="border border-gray-300 px-3 py-2 text-center font-bold w-20">Entrada</th>
+              <th className="border border-gray-300 px-3 py-2 text-center font-bold w-20">Saída</th>
+              <th className="border border-gray-300 px-3 py-2 text-center font-bold w-24">Horas</th>
+              <th className="border border-gray-300 px-3 py-2 text-center font-bold w-24">Tipo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRecords.map(rec => {
+               const duration = calculateDuration(rec.entryTime, rec.exitTime);
+               const [y, m, d] = rec.date.split('-');
+               const dateStr = `${d}/${m}/${y}`;
+               
+               return (
+                 <tr key={rec.id}>
+                   <td className="border border-gray-300 px-3 py-2">{dateStr}</td>
+                   <td className="border border-gray-300 px-3 py-2">{rec.employeeName}</td>
+                   <td className="border border-gray-300 px-3 py-2 uppercase text-xs">{rec.shift}</td>
+                   <td className="border border-gray-300 px-3 py-2 text-center">{rec.entryTime || '-'}</td>
+                   <td className="border border-gray-300 px-3 py-2 text-center">{rec.exitTime || '-'}</td>
+                   <td className="border border-gray-300 px-3 py-2 text-center">{duration > 0 ? formatDuration(duration) : '-'}</td>
+                   <td className="border border-gray-300 px-3 py-2 text-center uppercase text-xs">{rec.type}</td>
+                 </tr>
+               );
+            })}
+          </tbody>
+          <tfoot>
+             <tr className="bg-gray-50 font-bold">
+               <td colSpan={5} className="border border-gray-300 px-3 py-2 text-right">Total de Horas:</td>
+               <td colSpan={2} className="border border-gray-300 px-3 py-2 pl-6">{formatDuration(totalMinutes)}</td>
+             </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Screen Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 no-print">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Folha de Ponto</h1>
           <p className="text-slate-500 mt-1">Registro de ponto dos funcionários</p>
@@ -127,7 +266,8 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
         </button>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 space-y-4">
+      {/* Filters Bar */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 space-y-4 no-print">
         <div className="flex flex-col xl:flex-row gap-4">
            <div className="flex-1 relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -170,20 +310,43 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
                 ))}
              </select>
            </div>
-           <div className="flex gap-3 w-full md:w-auto">
+           <div className="flex gap-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
               {(searchTerm || filterShift !== 'todos' || filterEmployeeId !== 'todos') && (
-                <button onClick={handleClearFilters} className="px-3 py-2 text-slate-400 hover:text-slate-600 transition-colors">
+                <button onClick={handleClearFilters} className="px-3 py-2 text-slate-400 hover:text-slate-600 transition-colors" title="Limpar Filtros">
                   <FilterX size={20} />
                 </button>
               )}
-              <button onClick={handleClearAllRecordsRequest} className="flex-1 md:flex-none px-4 py-2 rounded-lg bg-red-300 hover:bg-red-400 text-white text-sm font-medium transition-colors">
+              
+              <button 
+                type="button"
+                onClick={handleClearAllRecordsRequest}
+                className="whitespace-nowrap px-4 py-2 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 text-sm font-medium transition-colors"
+              >
                 Limpar Tudo
+              </button>
+
+              <button 
+                type="button"
+                onClick={handleExportCSV}
+                className="whitespace-nowrap px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-white"
+              >
+                <Download size={16} />
+                Exportar CSV
+              </button>
+
+              <button 
+                type="button"
+                onClick={handleExportPDF}
+                className="whitespace-nowrap px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-white"
+              >
+                <FileDown size={16} />
+                Imprimir / PDF
               </button>
            </div>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4 no-print">
         {filteredRecords.length > 0 ? (
           filteredRecords.map((record) => (
             <TimeSheetCard 
@@ -212,7 +375,7 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
       />
 
       {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200 no-print">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
             <div className="flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
@@ -229,7 +392,7 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
       )}
 
       {isClearAllModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200 no-print">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
             <div className="flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
