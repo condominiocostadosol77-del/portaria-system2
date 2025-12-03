@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Save, MessageCircle, Search, User, ArrowRightLeft } from 'lucide-react';
 import { ReceivedItem, ReceivedItemOperation, Resident } from '../types';
@@ -27,6 +28,7 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
 
   // Form Data
   const [formData, setFormData] = useState({
+    recipientName: '', // Added recipientName to state
     unit: '',
     block: '',
     leftBy: '',
@@ -64,49 +66,53 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
     setFormData(prev => ({
       ...prev,
       unit: resident.unit,
-      block: resident.block
+      block: resident.block,
+      recipientName: resident.name // Set recipient name from selection
     }));
   };
 
   const handleSave = (notify: boolean) => {
-    // Determine semantic meaning of 'leftBy' based on operation
-    // If externo_para_morador: leftBy is the external person.
-    // If morador_para_externo: leftBy is the external person (recipient). 
-    // The Resident Name is always stored in recipientName for display consistency, but we handle the label in the Card.
-    
+    // Generate 4-digit code
+    const receivedCode = Math.floor(1000 + Math.random() * 9000).toString();
+
     const data: Omit<ReceivedItem, 'id' | 'status' | 'receivedAt'> = {
       operationType,
       ...formData,
       residentId: selectedResidentId || undefined,
-      recipientName: mode === 'manual' ? undefined : (residents.find(r => r.id === selectedResidentId)?.name)
+      // Use formData.recipientName which is populated by both Select and Manual input
+      recipientName: formData.recipientName,
+      receivedCode: receivedCode
     };
 
     onSubmit(data);
 
     if (notify) {
       let phone = '';
-      let residentName = '';
+      let residentName = formData.recipientName;
       
+      // Try to get phone from linked resident
       if (selectedResidentId) {
         const res = residents.find(r => r.id === selectedResidentId);
         if (res) {
           phone = res.phone.replace(/\D/g, '');
-          residentName = res.name;
         }
       }
 
       if (phone) {
          let message = '';
          if (operationType === 'externo_para_morador') {
-           message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${residentName.toUpperCase()}! 👋\n\n📦 Deixaram um item para você na portaria.\n\nINFORMAÇÕES:\n🏢 Unidade: ${formData.unit} - Bloco ${formData.block}\n👤 Deixado por: ${formData.leftBy}\n📝 Item: ${formData.description}\n\n📍 Por favor, compareça à portaria para realizar a retirada.\n\nAtenciosamente,\nEquipe da Portaria`;
+           message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${residentName.toUpperCase()}! 👋\n\n📦 Deixaram um item para você na portaria.\n\nINFORMAÇÕES:\n🏢 Unidade: ${formData.unit} - Bloco ${formData.block}\n👤 Deixado por: ${formData.leftBy}\n📝 Item: ${formData.description}\n\n🏷️ Código do Item: *${receivedCode}*\n\n📍 Por favor, compareça à portaria para realizar a retirada.\n\nAtenciosamente,\nEquipe da Portaria`;
          } else {
-           message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${residentName.toUpperCase()}! 👋\n\n📦 O item que você deixou na portaria foi registrado.\n\nINFORMAÇÕES:\n📝 Item: ${formData.description}\n👤 Para: ${formData.leftBy}\n\nAtenciosamente,\nEquipe da Portaria`;
+           message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${residentName.toUpperCase()}! 👋\n\n📦 O item que você deixou na portaria foi registrado.\n\nINFORMAÇÕES:\n📝 Item: ${formData.description}\n👤 Para: ${formData.leftBy}\n\n🏷️ Código do Item: *${receivedCode}*\n\nAtenciosamente,\nEquipe da Portaria`;
          }
          
          const url = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
          window.open(url, '_blank');
       } else {
-         alert("Não foi possível notificar: Telefone não encontrado para o morador selecionado.");
+         // Only alert if we selected a resident but couldn't find a phone, or in manual mode if we implemented manual phone entry later
+         if(mode === 'resident' && !phone) {
+             alert("Não foi possível notificar: Telefone não encontrado para o morador selecionado.");
+         }
       }
     }
 
@@ -120,6 +126,7 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
     setResidentSearch('');
     setSelectedResidentId('');
     setFormData({
+      recipientName: '',
       unit: '',
       block: '',
       leftBy: '',
@@ -191,11 +198,11 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
                 onChange={() => setMode('manual')}
                 className="w-4 h-4 text-green-600 focus:ring-green-500"
               />
-              <span className="text-sm font-medium text-slate-700">Digitar unidade manualmente</span>
+              <span className="text-sm font-medium text-slate-700">Digitar manualmente</span>
             </label>
           </div>
 
-          {/* Resident Search / Unit Input */}
+          {/* Resident Search / Name Input */}
           <div>
              {mode === 'resident' ? (
               <div className="space-y-1.5 relative" ref={dropdownRef}>
@@ -209,7 +216,10 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
                     onChange={(e) => {
                       setResidentSearch(e.target.value);
                       setShowDropdown(true);
-                      if(e.target.value === '') setSelectedResidentId('');
+                      if(e.target.value === '') {
+                        setSelectedResidentId('');
+                        setFormData(prev => ({...prev, recipientName: ''}));
+                      }
                     }}
                     onFocus={() => setShowDropdown(true)}
                     placeholder="Buscar morador..."
@@ -250,7 +260,18 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
                 )}
               </div>
              ) : (
-               <p className="text-sm text-slate-500 italic">Preencha os dados da unidade abaixo manualmente.</p>
+               <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    {isExternalToResident ? 'Nome do Morador (Destinatário) *' : 'Nome do Morador (Quem deixou) *'}
+                  </label>
+                  <input 
+                    type="text"
+                    value={formData.recipientName}
+                    onChange={(e) => setFormData({...formData, recipientName: e.target.value})}
+                    placeholder="Nome do morador"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none"
+                  />
+               </div>
              )}
           </div>
 
@@ -290,7 +311,7 @@ export const ReceivedItemModal: React.FC<ReceivedItemModalProps> = ({
                 type="text"
                 value={formData.leftBy}
                 onChange={(e) => setFormData({...formData, leftBy: e.target.value})}
-                placeholder="Nome da pessoa"
+                placeholder="Nome da pessoa externa"
                 className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none"
               />
             </div>

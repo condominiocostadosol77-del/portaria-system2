@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { CheckCircle2, Trash2, User, Clock, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Trash2, User, Clock, ArrowRight, Barcode, Tag, FileText } from 'lucide-react';
 import { ReceivedItem } from '../types';
 
 interface ReceivedItemCardProps {
@@ -13,16 +14,30 @@ export const ReceivedItemCard: React.FC<ReceivedItemCardProps> = ({ data, onPick
   const isExternalToResident = data.operationType === 'externo_para_morador';
 
   // Determine From/To based on operation type
-  // If Externo -> Morador: From = External (leftBy), To = Resident (recipientName)
-  // If Morador -> Externo: From = Resident (recipientName), To = External (leftBy)
   const fromLabel = isExternalToResident ? 'De (Externo)' : 'De (Morador)';
   const fromValue = isExternalToResident ? data.leftBy : (data.recipientName || 'Morador');
   
   const toLabel = isExternalToResident ? 'Para (Morador)' : 'Para (Externo)';
   const toValue = isExternalToResident ? (data.recipientName || 'Morador') : data.leftBy;
 
+  // STRATEGY: Extract internal code from observations if present
+  const internalCodeMatch = data.observations?.match(/Cód: (\d+)/);
+  // Fallback to data.receivedCode if available (though likely undefined from DB)
+  const displayCode = internalCodeMatch ? internalCodeMatch[1] : data.receivedCode;
+  
+  // Clean observations for display
+  const cleanObservations = data.observations?.replace(/\|? ?Cód: \d+/, '').trim();
+
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-4 transition-all hover:shadow-md">
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-4 transition-all hover:shadow-md relative overflow-hidden">
+      
+      {/* Visual Indicator for ID if present */}
+      {displayCode && (
+        <div className="absolute top-0 right-0 bg-teal-600 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg shadow-sm z-10 print:hidden">
+          ID #{displayCode}
+        </div>
+      )}
+
       {/* Header Row */}
       <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-8">
         <div className="flex items-start gap-5">
@@ -35,9 +50,18 @@ export const ReceivedItemCard: React.FC<ReceivedItemCardProps> = ({ data, onPick
             <h3 className="text-2xl font-bold text-slate-800 leading-tight mb-2">
               {data.description}
             </h3>
-            <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide border border-slate-200 bg-slate-50 text-slate-500">
-              {isExternalToResident ? 'Morador → Externo' : 'Externo → Morador'}
-            </span>
+            <div className="flex flex-wrap gap-2 mb-2">
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide border border-slate-200 bg-slate-50 text-slate-500">
+                {isExternalToResident ? 'Morador → Externo' : 'Externo → Morador'}
+              </span>
+              
+              {displayCode && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-teal-50 border border-teal-200 rounded-full">
+                  <Tag size={12} className="text-teal-600" />
+                  <span className="text-xs font-bold text-teal-800">CÓD: #{displayCode}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         
@@ -54,7 +78,7 @@ export const ReceivedItemCard: React.FC<ReceivedItemCardProps> = ({ data, onPick
       </div>
 
       {/* Info Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12 mb-8 px-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12 mb-6 px-1">
         <div>
           <span className="text-slate-400 text-xs font-bold uppercase block mb-1">
             {fromLabel}:
@@ -111,6 +135,19 @@ export const ReceivedItemCard: React.FC<ReceivedItemCardProps> = ({ data, onPick
           </div>
         )}
       </div>
+
+      {/* Observations Display */}
+      {cleanObservations && (
+        <div className="mb-6 bg-yellow-50 p-3 rounded-lg border border-yellow-100 text-sm">
+          <div className="flex items-start gap-2">
+            <FileText size={16} className="text-yellow-600 mt-0.5" />
+            <div>
+              <span className="font-bold text-yellow-800 block text-xs uppercase mb-1">Observações:</span>
+              <p className="text-slate-700 italic">{cleanObservations}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex gap-3">

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Calendar, Inbox, AlertTriangle } from 'lucide-react';
 import { ReceivedItem, Resident } from '../types';
@@ -32,7 +33,9 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.unit.includes(searchTerm) ||
         item.block.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.leftBy.toLowerCase().includes(searchTerm.toLowerCase());
+        item.leftBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.observations && item.observations.toLowerCase().includes(searchTerm.toLowerCase())) || // Search in observations (where code is)
+        (item.receivedCode && item.receivedCode.includes(searchTerm)); 
       
       if (filterStatus === 'pendentes') return matchesSearch && item.status === 'Aguardando Retirada';
       if (filterStatus === 'retiradas') return matchesSearch && item.status === 'Retirada';
@@ -45,6 +48,11 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
     const receivedAt = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     try {
+      // Como a coluna received_code não existe no banco, salvamos o código nas observações para não perder a informação
+      const finalObservations = data.observations 
+        ? `${data.observations} | Cód: ${data.receivedCode}` 
+        : `Cód: ${data.receivedCode}`;
+
       const { error } = await supabase.from('received_items').insert({
         operation_type: data.operationType,
         unit: data.unit,
@@ -55,16 +63,17 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
         document: data.document,
         description: data.description,
         shift: data.shift,
-        observations: data.observations,
+        observations: finalObservations,
         received_at: receivedAt,
-        status: 'Aguardando Retirada'
+        status: 'Aguardando Retirada',
+        // received_code: data.receivedCode // Removido para evitar erro PGRST204
       });
       if (error) throw error;
       onRefresh();
       setIsNewModalOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Erro ao registrar item');
+      alert(`Erro ao registrar item: ${err.message || 'Verifique os dados.'}`);
     }
   };
 
@@ -125,7 +134,7 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
             </div>
             <input 
               type="text" 
-              placeholder="Buscar por item, pessoa, unidade ou bloco..." 
+              placeholder="Buscar por item, pessoa, unidade, ou CÓDIGO (ex: 1234)..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 transition-all text-base placeholder:text-slate-400"

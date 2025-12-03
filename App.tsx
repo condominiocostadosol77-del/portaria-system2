@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Menu, Loader2 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
@@ -20,14 +21,18 @@ import { MENU_ITEMS, CURRENT_USER } from './constants';
 import { Resident, PackageItem, Company, Employee, Occurrence, ReceivedItem, BorrowedMaterial, Visitor, TimeRecord, DeliveryDriver, DeliveryVisit, UserProfile } from './types';
 import { supabase } from './lib/supabase';
 
-// Define escopos para atualização inteligente
+// Define keys for granular refreshing
 type DataScope = 'all' | 'residents' | 'packages' | 'companies' | 'employees' | 'occurrences' | 'received_items' | 'materials' | 'visitors' | 'time_records' | 'delivery_drivers' | 'delivery_visits';
 
 const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
-    const savedUser = localStorage.getItem('portaria_user');
-    return savedUser ? JSON.parse(savedUser) : CURRENT_USER;
+    try {
+      const savedUser = localStorage.getItem('portaria_user');
+      return savedUser ? JSON.parse(savedUser) : CURRENT_USER;
+    } catch {
+      return CURRENT_USER;
+    }
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -58,9 +63,7 @@ const App: React.FC = () => {
   const [isNotepadOpen, setIsNotepadOpen] = useState(false);
   const [isNotepadMinimized, setIsNotepadMinimized] = useState(false);
 
-  // --- BUSCA DE DADOS OTIMIZADA (GRANULAR) ---
-  // Aceita um array de escopos. Se passar ['all'], busca tudo.
-  // Se passar ['residents'], busca apenas residentes e mantém o resto cacheado.
+  // --- OPTIMIZED SUPABASE DATA FETCHING ---
   const fetchData = useCallback(async (scopes: DataScope[] = ['all'], isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     
@@ -68,11 +71,10 @@ const App: React.FC = () => {
 
     try {
       const promises: Promise<any>[] = [];
-      const fetchMap: Record<string, number> = {}; // Mapeia o resultado da promise para o estado correto
+      const fetchMap: Record<string, number> = {}; 
 
       let pIndex = 0;
 
-      // Constrói o array de promessas dinamicamente
       if (shouldFetch('residents')) {
         promises.push(supabase.from('residents').select('*'));
         fetchMap['residents'] = pIndex++;
@@ -118,11 +120,8 @@ const App: React.FC = () => {
         fetchMap['delivery_visits'] = pIndex++;
       }
 
-      // Executa apenas as requisições necessárias em paralelo
       const results = await Promise.all(promises);
 
-      // --- Processa os Resultados ---
-      
       if (fetchMap['residents'] !== undefined) {
         const res = results[fetchMap['residents']];
         if (res.data) setResidents(res.data);
@@ -183,7 +182,8 @@ const App: React.FC = () => {
             leftBy: i.left_by,
             receivedAt: i.received_at,
             pickedUpBy: i.picked_up_by,
-            pickedUpAt: i.picked_up_at
+            pickedUpAt: i.picked_up_at,
+            receivedCode: i.received_code
           })));
         }
       }
@@ -253,14 +253,14 @@ const App: React.FC = () => {
         }
       }
 
-    } catch (error) {
-      console.error("Error fetching data:", error);
+    } catch (error: any) {
+      console.error("Error fetching data:", error?.message || error);
     } finally {
       if (!isBackground) setIsLoading(false);
     }
   }, []);
 
-  // Carga Inicial (Busca tudo na primeira vez)
+  // Initial Fetch (Load Everything)
   useEffect(() => {
     fetchData(['all']);
   }, [fetchData]);
@@ -303,12 +303,18 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      fetchData(['occurrences'], true); // Atualiza apenas ocorrências
+      fetchData(['occurrences'], true); // Granular Refresh
       setActivePage('ocorrencias');
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Error saving occurrence:", err?.message || err);
       alert('Erro ao salvar ocorrência');
     }
+  };
+
+  // Dedicated handler for opening notepad
+  const handleOpenNotepad = () => {
+    setIsNotepadOpen(true);
+    setIsNotepadMinimized(false);
   };
 
   if (!isAuthenticated && !isLoading) {
@@ -371,7 +377,7 @@ const App: React.FC = () => {
             residents={residents}
             packages={packages}
             companies={companies}
-            onRefresh={() => fetchData(['packages'], true)}
+            onRefresh={(scope) => fetchData(scope ? [scope] : ['packages'], true)} // Granular refresh support
           />
         ) : activePage === 'recebidos' ? (
           <ReceivedItemsPage 
@@ -412,7 +418,8 @@ const App: React.FC = () => {
           <DeliveryVisitsPage
             visits={deliveryVisits}
             drivers={deliveryDrivers}
-            onRefresh={() => fetchData(['delivery_visits'], true)}
+            companies={companies}
+            onRefresh={() => fetchData(['delivery_visits', 'delivery_drivers'], true)}
           />
         ) : activePage === 'funcionarios' ? (
           <EmployeesPage 
@@ -424,10 +431,7 @@ const App: React.FC = () => {
             occurrences={occurrences}
             employees={employees}
             onRefresh={() => fetchData(['occurrences'], true)}
-            onOpenNotepad={() => {
-              setIsNotepadOpen(true);
-              setIsNotepadMinimized(false);
-            }}
+            onOpenNotepad={handleOpenNotepad}
           />
         ) : null}
       </main>

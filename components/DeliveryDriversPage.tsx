@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, AlertTriangle } from 'lucide-react';
+import { Plus, Search, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { DeliveryDriver, Company } from '../types';
 import { DeliveryDriverCard } from './DeliveryDriverCard';
 import { DeliveryDriverModal } from './DeliveryDriverModal';
@@ -10,9 +11,10 @@ interface DeliveryDriversPageProps {
   setDrivers?: React.Dispatch<React.SetStateAction<DeliveryDriver[]>>;
   companies: Company[];
   onRefresh: () => void;
+  onClose?: () => void; // Optional prop for when used as a modal
 }
 
-export const DeliveryDriversPage: React.FC<DeliveryDriversPageProps> = ({ drivers, companies, onRefresh }) => {
+export const DeliveryDriversPage: React.FC<DeliveryDriversPageProps> = ({ drivers, companies, onRefresh, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'ativo' | 'inativo' | 'bloqueado'>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -88,7 +90,22 @@ export const DeliveryDriversPage: React.FC<DeliveryDriversPageProps> = ({ driver
   const editingDriver = editingId ? drivers.find(d => d.id === editingId) : undefined;
 
   return (
-    <div className="animate-in fade-in duration-300">
+    <div className="animate-in fade-in duration-300 relative">
+      
+      {/* Sticky Header for Modal Mode - High Visibility and robust positioning */}
+      {onClose && (
+        <div className="sticky top-0 z-50 bg-white pb-3 pt-3 -mx-4 px-4 md:-mx-8 md:px-8 mb-4 border-b border-gray-200 shadow-md">
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-2 text-slate-700 hover:text-blue-600 bg-white hover:bg-slate-50 px-4 py-2.5 rounded-lg border border-slate-300 shadow-sm transition-all font-bold w-full md:w-auto justify-center md:justify-start"
+          >
+            <ArrowLeft size={20} />
+            <span>Voltar para Visitas</span>
+          </button>
+        </div>
+      )}
+
+      {/* Main Content Area */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Entregadores</h1>
@@ -133,7 +150,7 @@ export const DeliveryDriversPage: React.FC<DeliveryDriversPageProps> = ({ driver
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-8">
         {filteredDrivers.length > 0 ? (
           filteredDrivers.map((driver) => (
             <DeliveryDriverCard 

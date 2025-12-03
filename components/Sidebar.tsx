@@ -1,5 +1,6 @@
-import React from 'react';
-import { LogOut, Building, User, X } from 'lucide-react';
+
+import React, { useState } from 'react';
+import { LogOut, Building, User, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { MenuItem, UserProfile } from '../types';
 
 interface SidebarProps {
@@ -21,6 +22,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
   onLogout
 }) => {
+  const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
+
+  const handleParentClick = (itemId: string) => {
+    setOpenSubmenuId(openSubmenuId === itemId ? null : itemId);
+  };
+
+  const handleChildClick = (pageId: string) => {
+    onNavigate(pageId);
+    onClose(); // Auto close main sidebar on selection
+  };
+
   return (
     <>
       {/* Backdrop Overlay (closes sidebar on click) */}
@@ -59,21 +71,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Navigation Items */}
         <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
           {items.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                onNavigate(item.id);
-                onClose(); // Auto close on selection
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                activePage === item.id
-                  ? 'bg-primary text-white shadow-md shadow-blue-200'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <item.icon size={20} strokeWidth={activePage === item.id ? 2.5 : 2} />
-              <span>{item.label}</span>
-            </button>
+            item.children && item.children.length > 0 ? (
+              <div key={item.id}>
+                <button
+                  onClick={() => handleParentClick(item.id)}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                    openSubmenuId === item.id || item.children.some(child => activePage === child.id)
+                      ? 'bg-slate-100 text-slate-900' // Active parent style
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon size={20} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </div>
+                  {openSubmenuId === item.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {openSubmenuId === item.id && (
+                  <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-slate-200 pl-2 py-1">
+                    {item.children.map(child => (
+                      <button
+                        key={child.id}
+                        onClick={() => handleChildClick(child.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors duration-200 ${
+                          activePage === child.id
+                            ? 'bg-primary text-white shadow-md shadow-blue-200'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        <child.icon size={18} strokeWidth={activePage === child.id ? 2.5 : 2} />
+                        <span>{child.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                key={item.id}
+                onClick={() => handleChildClick(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                  activePage === item.id
+                    ? 'bg-primary text-white shadow-md shadow-blue-200'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <item.icon size={20} strokeWidth={activePage === item.id ? 2.5 : 2} />
+                <span>{item.label}</span>
+              </button>
+            )
           ))}
         </nav>
 
@@ -84,8 +130,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                <User size={20} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-500 font-medium uppercase">{user.role}</p>
-              <p className="text-sm font-bold text-slate-800 truncate">{user.name}</p>
+              <p className="text-xs text-slate-500 font-medium uppercase">{user?.role || 'Visitante'}</p>
+              <p className="text-sm font-bold text-slate-800 truncate">{user?.name || 'Usuário'}</p>
             </div>
           </div>
           

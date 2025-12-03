@@ -1,9 +1,11 @@
+
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Calendar, AlertTriangle, ArrowRight, ChevronLeft, Layers, Box } from 'lucide-react';
 import { PackageItem, Resident, Company } from '../types';
 import { PackageCard } from './PackageCard';
 import { PackageModal } from './PackageModal';
 import { PickupModal } from './PickupModal';
+import { ResidentModal } from './ResidentModal'; // Import ResidentModal
 import { supabase } from '../lib/supabase';
 
 interface PackagesPageProps {
@@ -11,7 +13,7 @@ interface PackagesPageProps {
   packages: PackageItem[];
   setPackages?: React.Dispatch<React.SetStateAction<PackageItem[]>>;
   companies: Company[];
-  onRefresh: () => void;
+  onRefresh: (scope?: 'residents' | 'packages') => void; // Update onRefresh signature
 }
 
 export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages, companies, onRefresh }) => {
@@ -23,6 +25,9 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
   const [pickupId, setPickupId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isBulkPickupOpen, setIsBulkPickupOpen] = useState(false);
+
+  // State for adding new resident from within PackageModal
+  const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
 
   const stats = {
     total: packages.length,
@@ -36,7 +41,10 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         pkg.recipientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         pkg.unit.includes(searchTerm) ||
         pkg.block.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        pkg.withdrawalCode.includes(searchTerm);
+        pkg.withdrawalCode.includes(searchTerm) ||
+        (pkg.trackingCode && pkg.trackingCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (pkg.observations && pkg.observations.toLowerCase().includes(searchTerm.toLowerCase())) || // Search in observations for ID
+        (pkg.sender && pkg.sender.toLowerCase().includes(searchTerm.toLowerCase()));
       
       if (filterStatus === 'pendentes') return matchesSearch && pkg.status === 'Aguardando Retirada';
       if (filterStatus === 'retiradas') return matchesSearch && pkg.status === 'Retirada';
@@ -100,7 +108,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         observations: data.observations
       });
       if (error) throw error;
-      onRefresh();
+      onRefresh('packages'); // Specify scope
     } catch (err) {
       console.error(err);
       alert('Erro ao salvar encomenda');
@@ -138,7 +146,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         setIsBulkPickupOpen(false);
         setSelectedGroup(null);
       }
-      onRefresh();
+      onRefresh('packages');
     } catch (err) {
       console.error(err);
       alert('Erro ao registrar retirada');
@@ -149,7 +157,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     if (deleteId) {
       const { error } = await supabase.from('packages').delete().eq('id', deleteId);
       if (error) alert('Erro ao excluir');
-      else onRefresh();
+      else onRefresh('packages');
       setDeleteId(null);
     }
   };
@@ -158,75 +166,34 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
     setSelectedGroup({ unit, block });
   };
 
+  // Logic to add new resident
+  const handleAddResident = () => {
+    setIsResidentModalOpen(true);
+  };
+
+  const handleResidentSubmit = async (data: Omit<Resident, 'id'>) => {
+    try {
+      const { error } = await supabase.from('residents').insert(data);
+      if (error) throw error;
+      onRefresh('residents'); // Refresh residents list so PackageModal sees the new resident
+      setIsResidentModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao salvar morador');
+    }
+  };
+
   // Helper to determine block colors
   const getBlockColorStyles = (blockName: string) => {
-    // Normalize to handle 'Bloco A' vs 'A' if necessary, mostly likely just single char
     const char = blockName.replace('BLOCO ', '').trim().charAt(0).toUpperCase();
-    
     switch (char) {
-      case 'A': return {
-        bg: 'bg-blue-50',
-        text: 'text-blue-700',
-        border: 'border-blue-200',
-        iconBg: 'bg-blue-50',
-        iconText: 'text-blue-600',
-        hoverIconBg: 'group-hover:bg-blue-100',
-        cardBorder: 'border-l-blue-500'
-      };
-      case 'B': return {
-        bg: 'bg-emerald-50',
-        text: 'text-emerald-700',
-        border: 'border-emerald-200',
-        iconBg: 'bg-emerald-50',
-        iconText: 'text-emerald-600',
-        hoverIconBg: 'group-hover:bg-emerald-100',
-        cardBorder: 'border-l-emerald-500'
-      };
-      case 'C': return {
-        bg: 'bg-purple-50',
-        text: 'text-purple-700',
-        border: 'border-purple-200',
-        iconBg: 'bg-purple-50',
-        iconText: 'text-purple-600',
-        hoverIconBg: 'group-hover:bg-purple-100',
-        cardBorder: 'border-l-purple-500'
-      };
-      case 'D': return {
-        bg: 'bg-orange-50',
-        text: 'text-orange-700',
-        border: 'border-orange-200',
-        iconBg: 'bg-orange-50',
-        iconText: 'text-orange-600',
-        hoverIconBg: 'group-hover:bg-orange-100',
-        cardBorder: 'border-l-orange-500'
-      };
-      case 'E': return {
-        bg: 'bg-pink-50',
-        text: 'text-pink-700',
-        border: 'border-pink-200',
-        iconBg: 'bg-pink-50',
-        iconText: 'text-pink-600',
-        hoverIconBg: 'group-hover:bg-pink-100',
-        cardBorder: 'border-l-pink-500'
-      };
-      case 'F': return {
-        bg: 'bg-cyan-50',
-        text: 'text-cyan-700',
-        border: 'border-cyan-200',
-        iconBg: 'bg-cyan-50',
-        iconText: 'text-cyan-600',
-        hoverIconBg: 'group-hover:bg-cyan-100',
-        cardBorder: 'border-l-cyan-500'
-      };
-      default: return {
-        bg: 'bg-slate-100',
-        text: 'text-slate-700',
-        border: 'border-slate-200',
-        iconBg: 'bg-slate-100',
-        iconText: 'text-slate-500',
-        hoverIconBg: 'group-hover:bg-slate-200',
-        cardBorder: 'border-l-slate-500'
-      };
+      case 'A': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', iconBg: 'bg-blue-50', iconText: 'text-blue-600', hoverIconBg: 'group-hover:bg-blue-100', cardBorder: 'border-l-blue-500' };
+      case 'B': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', hoverIconBg: 'group-hover:bg-emerald-100', cardBorder: 'border-l-emerald-500' };
+      case 'C': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', iconBg: 'bg-purple-50', iconText: 'text-purple-600', hoverIconBg: 'group-hover:bg-purple-100', cardBorder: 'border-l-purple-500' };
+      case 'D': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', iconBg: 'bg-orange-50', iconText: 'text-orange-600', hoverIconBg: 'group-hover:bg-orange-100', cardBorder: 'border-l-orange-500' };
+      case 'E': return { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200', iconBg: 'bg-pink-50', iconText: 'text-pink-600', hoverIconBg: 'group-hover:bg-pink-100', cardBorder: 'border-l-pink-500' };
+      case 'F': return { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', iconBg: 'bg-cyan-50', iconText: 'text-cyan-600', hoverIconBg: 'group-hover:bg-cyan-100', cardBorder: 'border-l-cyan-500' };
+      default: return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', iconBg: 'bg-slate-100', iconText: 'text-slate-500', hoverIconBg: 'group-hover:bg-slate-200', cardBorder: 'border-l-slate-500' };
     }
   };
 
@@ -253,7 +220,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
             </div>
             <input 
               type="text" 
-              placeholder="Buscar por morador, unidade ou código..." 
+              placeholder="Buscar por morador, unidade, rastreio ou ID (ex: 1234)..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all text-base placeholder:text-slate-400"
@@ -385,6 +352,14 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         onSubmit={handleCreate}
         residents={residents}
         companies={companies}
+        onAddResident={handleAddResident} // Pass handler
+      />
+
+      {/* Render Resident Modal inside PackagesPage */}
+      <ResidentModal
+        isOpen={isResidentModalOpen}
+        onClose={() => setIsResidentModalOpen(false)}
+        onSubmit={handleResidentSubmit}
       />
 
       <PickupModal

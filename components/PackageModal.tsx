@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, MessageCircle, Search, User, Building2 } from 'lucide-react';
+import { X, Save, MessageCircle, Search, User, Building2, Plus } from 'lucide-react';
 import { PackageItem, Resident, Company } from '../types';
 
 interface PackageModalProps {
@@ -8,9 +9,10 @@ interface PackageModalProps {
   onSubmit: (data: Partial<PackageItem>) => void;
   residents: Resident[];
   companies: Company[];
+  onAddResident: () => void;
 }
 
-export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onSubmit, residents, companies }) => {
+export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onSubmit, residents, companies, onAddResident }) => {
   const [mode, setMode] = useState<'resident' | 'manual'>('resident');
   
   // Search State for Residents
@@ -84,15 +86,23 @@ export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onS
 
   const handleSave = (notify: boolean) => {
     const withdrawalCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const internalCode = Math.floor(1000 + Math.random() * 9000).toString(); // Generate unique 4-digit code
+    
     const now = new Date();
     // Format: DD/MM/YY HH:MM
     const receivedAt = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getFullYear().toString().slice(-2)} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    // Append code to observations
+    const finalObservations = formData.observations 
+      ? `${formData.observations} | Cód: ${internalCode}` 
+      : `Cód: ${internalCode}`;
 
     const newPackage: Partial<PackageItem> = {
       ...formData,
       withdrawalCode,
       receivedAt,
-      status: 'Aguardando Retirada'
+      status: 'Aguardando Retirada',
+      observations: finalObservations // Save with appended code
     };
 
     onSubmit(newPackage);
@@ -107,10 +117,10 @@ export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onS
 
       if (phone) {
         // Extract time from receivedAt (HH:MM)
-        const time = receivedAt.split(' ')[1];
+        const time = receivedAt.split(' ');
         
         // Formatted message
-        const message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${formData.recipientName.toUpperCase()}! 👋\n\n📦 Você tem uma encomenda aguardando retirada na portaria.\n\nINFORMAÇÕES:\n🏢 Unidade: ${formData.unit} - Bloco ${formData.block}\n🚚 Empresa: ${formData.sender.toUpperCase() || 'NÃO INFORMADO'}\n\n🏷️ Código de Rastreio: ${formData.trackingCode || 'N/A'}\n🔐 Código de Retirada: *${withdrawalCode}*\n🕒 Recebido às: ${time}\n\n📍 Por favor, compareça à portaria para realizar a retirada.\n\nAtenciosamente,\nEquipe da Portaria`;
+        const message = `🔔 NOTIFICAÇÃO DA PORTARIA\n\nOlá, ${formData.recipientName.toUpperCase()}! 👋\n\n📦 Você tem uma encomenda aguardando retirada na portaria.\n\nINFORMAÇÕES:\n🏢 Unidade: ${formData.unit} - Bloco ${formData.block}\n🚚 Empresa: ${formData.sender.toUpperCase() || 'NÃO INFORMADO'}\n\n🆔 ID Pacote: *#${internalCode}*\n🏷️ Rastreio: ${formData.trackingCode || 'N/A'}\n🔐 Código de Retirada: *${withdrawalCode}*\n\n📍 Por favor, compareça à portaria para realizar a retirada.\n\nAtenciosamente,\nEquipe da Portaria`;
         
         const url = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
@@ -186,22 +196,33 @@ export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onS
             {mode === 'resident' ? (
               <div className="space-y-1.5 relative" ref={dropdownRef}>
                 <label className="block text-sm font-semibold text-slate-700">Morador</label>
-                <div className="relative">
-                  <input 
-                    type="text"
-                    value={residentSearch}
-                    onChange={(e) => {
-                      setResidentSearch(e.target.value);
-                      setShowDropdown(true);
-                      if(e.target.value === '') setSelectedResidentId('');
-                    }}
-                    onFocus={() => setShowDropdown(true)}
-                    placeholder="Buscar por nome, unidade ou bloco..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-100 focus:border-purple-500 outline-none"
-                  />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    <Search size={18} />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input 
+                      type="text"
+                      value={residentSearch}
+                      onChange={(e) => {
+                        setResidentSearch(e.target.value);
+                        setShowDropdown(true);
+                        if(e.target.value === '') setSelectedResidentId('');
+                      }}
+                      onFocus={() => setShowDropdown(true)}
+                      placeholder="Buscar por nome, unidade ou bloco..."
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-100 focus:border-purple-500 outline-none"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Search size={18} />
+                    </div>
                   </div>
+                  
+                  <button 
+                    type="button"
+                    onClick={onAddResident}
+                    className="bg-primary hover:bg-blue-700 text-white px-3 rounded-lg flex items-center justify-center transition-colors shadow-sm min-w-[44px]"
+                    title="Novo Morador"
+                  >
+                    <Plus size={20} />
+                  </button>
                 </div>
 
                 {/* Intelligent Search Dropdown */}
@@ -219,7 +240,7 @@ export const PackageModal: React.FC<PackageModalProps> = ({ isOpen, onClose, onS
                               <User size={14} />
                             </div>
                             <div>
-                              <p className="text-sm font-semibold text-slate-800 group-hover:text-purple-700">{res.name}</p>
+                              <p className="text-sm font-semibold text-slate-800 group-hover:text-purple-700 uppercase">{res.name}</p>
                               <p className="text-xs text-slate-500">Unidade {res.unit} - Bloco {res.block}</p>
                             </div>
                           </div>

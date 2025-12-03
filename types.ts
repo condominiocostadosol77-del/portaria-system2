@@ -5,6 +5,7 @@ export interface MenuItem {
   label: string;
   icon: LucideIcon;
   active?: boolean;
+  children?: MenuItem[]; // Added for submenus
 }
 
 export type PackageStatus = 'Aguardando Retirada' | 'Retirada';
@@ -45,6 +46,7 @@ export interface ReceivedItem {
   status: ReceivedItemStatus;
   pickedUpBy?: string;
   pickedUpAt?: string;
+  receivedCode?: string; // New: Unique code for received item
 }
 
 export interface UserProfile {

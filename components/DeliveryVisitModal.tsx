@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Save, Search, User, Truck } from 'lucide-react';
+import { X, Save, Search, User, Plus } from 'lucide-react'; // Removed Edit2
 import { DeliveryVisit, DeliveryDriver } from '../types';
 
 interface DeliveryVisitModalProps {
@@ -8,6 +9,8 @@ interface DeliveryVisitModalProps {
   onSubmit: (data: Omit<DeliveryVisit, 'id' | 'entryTime'>) => void;
   drivers: DeliveryDriver[];
   initialData?: DeliveryVisit;
+  onAddDriver: () => void;
+  onEditDriver: (driverId: string) => void; // Keep prop, just don't use the button
 }
 
 export const DeliveryVisitModal: React.FC<DeliveryVisitModalProps> = ({ 
@@ -15,7 +18,9 @@ export const DeliveryVisitModal: React.FC<DeliveryVisitModalProps> = ({
   onClose, 
   onSubmit, 
   drivers,
-  initialData
+  initialData,
+  onAddDriver,
+  onEditDriver // Keep prop, just don't use the button
 }) => {
   // Intelligent Search State
   const [driverSearch, setDriverSearch] = useState('');
@@ -128,30 +133,58 @@ export const DeliveryVisitModal: React.FC<DeliveryVisitModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           
-          {/* Driver Search */}
+          {/* Driver Search with Add/Edit Buttons */}
           <div className="space-y-1.5 relative" ref={dropdownRef}>
             <label className="block text-sm font-semibold text-slate-700">Entregador *</label>
-            <div className="relative">
-              <input 
-                type="text"
-                value={driverSearch}
-                onChange={(e) => {
-                  setDriverSearch(e.target.value);
-                  setShowDropdown(true);
-                  if(e.target.value === '') {
-                    setSelectedDriverId('');
-                    setFormData(prev => ({...prev, driverName: '', companyName: ''}));
-                  } else {
-                    setFormData(prev => ({...prev, driverName: e.target.value}));
-                  }
-                }}
-                onFocus={() => setShowDropdown(true)}
-                placeholder="Buscar por Nome, CPF ou RG..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none"
-              />
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <Search size={18} />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input 
+                  type="text"
+                  value={driverSearch}
+                  onChange={(e) => {
+                    setDriverSearch(e.target.value);
+                    setShowDropdown(true);
+                    if(e.target.value === '') {
+                      setSelectedDriverId('');
+                      setFormData(prev => ({...prev, driverName: '', companyName: ''}));
+                    } else {
+                      setFormData(prev => ({...prev, driverName: e.target.value}));
+                    }
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="Buscar por Nome, CPF ou RG..."
+                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none"
+                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Search size={18} />
+                </div>
               </div>
+              
+              <button 
+                type="button"
+                onClick={onAddDriver}
+                className="bg-[#0f766e] hover:bg-[#0d9488] text-white px-3 rounded-lg flex items-center justify-center transition-colors shadow-sm min-w-[44px]"
+                title="Novo Entregador"
+              >
+                <Plus size={20} />
+              </button>
+
+              {/* Removed Edit Button (Lápis) */}
+              {/*
+              <button 
+                type="button"
+                onClick={() => selectedDriverId && onEditDriver(selectedDriverId)}
+                disabled={!selectedDriverId}
+                className={`px-3 rounded-lg flex items-center justify-center transition-colors shadow-sm border min-w-[44px] ${
+                  selectedDriverId 
+                    ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer' 
+                    : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'
+                }`}
+                title={selectedDriverId ? "Editar Entregador Selecionado" : "Selecione um entregador para editar"}
+              >
+                <Edit2 size={18} />
+              </button>
+              */}
             </div>
 
             {/* Dropdown */}
