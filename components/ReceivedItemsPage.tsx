@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Calendar, Inbox, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Calendar, Inbox, AlertTriangle, X } from 'lucide-react';
 import { ReceivedItem, Resident } from '../types';
 import { ReceivedItemCard } from './ReceivedItemCard';
 import { ReceivedItemModal } from './ReceivedItemModal';
@@ -17,18 +17,37 @@ interface ReceivedItemsPageProps {
 export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, residents, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'pendentes' | 'retiradas'>('todos');
+  const [selectedDate, setSelectedDate] = useState(''); // New state for date filter
+  
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [pickupId, setPickupId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const stats = {
-    total: items.length,
-    pending: items.filter(i => i.status === 'Aguardando Retirada').length,
-    pickedUp: items.filter(i => i.status === 'Retirada').length
+  // Helper function to check if item date matches selected filter date
+  const checkDateMatch = (dateStr: string, filterDate: string) => {
+    if (!filterDate) return true;
+    if (!dateStr) return false;
+
+    // dateStr format is DD/MM/YY HH:MM (e.g., 03/12/25 18:20)
+    const [datePart] = dateStr.split(' ');
+    if (!datePart) return false;
+
+    const [day, month, shortYear] = datePart.split('/');
+    // Assume 20xx for 2-digit years
+    const fullYear = parseInt(shortYear) + 2000;
+    
+    // Create YYYY-MM-DD string to compare with input type="date" value
+    const formattedDate = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    return formattedDate === filterDate;
   };
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
+      // 1. Check Date
+      const matchesDate = checkDateMatch(item.receivedAt, selectedDate);
+
+      // 2. Check Search
       const matchesSearch = 
         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.unit.includes(searchTerm) ||
@@ -37,11 +56,22 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
         (item.observations && item.observations.toLowerCase().includes(searchTerm.toLowerCase())) || // Search in observations (where code is)
         (item.receivedCode && item.receivedCode.includes(searchTerm)); 
       
-      if (filterStatus === 'pendentes') return matchesSearch && item.status === 'Aguardando Retirada';
-      if (filterStatus === 'retiradas') return matchesSearch && item.status === 'Retirada';
-      return matchesSearch;
+      // 3. Check Status
+      let matchesStatus = true;
+      if (filterStatus === 'pendentes') matchesStatus = item.status === 'Aguardando Retirada';
+      if (filterStatus === 'retiradas') matchesStatus = item.status === 'Retirada';
+
+      return matchesSearch && matchesDate && matchesStatus;
     });
-  }, [items, searchTerm, filterStatus]);
+  }, [items, searchTerm, filterStatus, selectedDate]);
+
+  // Stats need to respect the date filter but generally show global context for tabs
+  // or show context relative to current date filter. Let's make stats relative to date filter to match list.
+  const stats = {
+    total: items.filter(i => checkDateMatch(i.receivedAt, selectedDate)).length,
+    pending: items.filter(i => i.status === 'Aguardando Retirada' && checkDateMatch(i.receivedAt, selectedDate)).length,
+    pickedUp: items.filter(i => i.status === 'Retirada' && checkDateMatch(i.receivedAt, selectedDate)).length
+  };
 
   const handleCreate = async (data: Omit<ReceivedItem, 'id' | 'status' | 'receivedAt'>) => {
     const now = new Date();
@@ -141,10 +171,28 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
             />
         </div>
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-           <div className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-slate-500 text-sm hover:border-slate-300 cursor-pointer bg-white w-full md:w-auto">
-              <span>dd/mm/aaaa</span>
-              <Calendar size={16} />
+           
+           {/* Date Filter Input */}
+           <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white w-full md:w-auto relative hover:border-slate-300 transition-colors">
+              <Calendar size={16} className="text-slate-400" />
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="outline-none bg-transparent text-slate-600 text-sm font-medium focus:ring-0 w-full"
+                title="Filtrar por data de recebimento"
+              />
+              {selectedDate && (
+                <button 
+                  onClick={() => setSelectedDate('')} 
+                  className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Limpar data"
+                >
+                  <X size={14} />
+                </button>
+              )}
            </div>
+
            <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
              <button onClick={() => setFilterStatus('todos')} className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'todos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Todos ({stats.total})</button>
              <button onClick={() => setFilterStatus('pendentes')} className={`flex-1 md:flex-none whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'pendentes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Pendentes ({stats.pending})</button>
@@ -168,7 +216,7 @@ export const ReceivedItemsPage: React.FC<ReceivedItemsPageProps> = ({ items, res
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
                <Inbox size={32} />
              </div>
-             <p className="text-slate-500 font-medium">Nenhum item encontrado</p>
+             <p className="text-slate-500 font-medium">Nenhum item encontrado {selectedDate ? 'nesta data' : ''}.</p>
           </div>
         )}
       </div>

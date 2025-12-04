@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Calendar, Users, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Calendar, Users, AlertTriangle, X } from 'lucide-react';
 import { Visitor, Resident } from '../types';
 import { VisitorCard } from './VisitorCard';
 import { VisitorModal } from './VisitorModal';
@@ -15,22 +16,48 @@ interface VisitorsPageProps {
 export const VisitorsPage: React.FC<VisitorsPageProps> = ({ visitors, residents, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'no_condominio' | 'saiu'>('todos');
+  const [selectedDate, setSelectedDate] = useState(''); // New state for date filter
+  
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Helper function to check if item date matches selected filter date
+  const checkDateMatch = (dateStr: string, filterDate: string) => {
+    if (!filterDate) return true;
+    if (!dateStr) return false;
+
+    // dateStr format is DD/MM/YY HH:MM
+    const [datePart] = dateStr.split(' ');
+    if (!datePart) return false;
+
+    const [day, month, shortYear] = datePart.split('/');
+    const fullYear = parseInt(shortYear) + 2000;
+    
+    // Create YYYY-MM-DD string
+    const formattedDate = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    return formattedDate === filterDate;
+  };
+
   const filteredVisitors = useMemo(() => {
     return visitors.filter(v => {
+      // 1. Check Date
+      const matchesDate = checkDateMatch(v.entryTime, selectedDate);
+
+      // 2. Check Search
       const matchesSearch = 
         v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (v.document && v.document.includes(searchTerm)) ||
         v.unit.includes(searchTerm) ||
         (v.residentName && v.residentName.toLowerCase().includes(searchTerm.toLowerCase()));
       
-      if (filterStatus === 'no_condominio') return matchesSearch && v.status === 'no_condominio';
-      if (filterStatus === 'saiu') return matchesSearch && v.status === 'saiu';
-      return matchesSearch;
+      // 3. Check Status
+      if (filterStatus === 'no_condominio') return matchesDate && matchesSearch && v.status === 'no_condominio';
+      if (filterStatus === 'saiu') return matchesDate && matchesSearch && v.status === 'saiu';
+      
+      return matchesDate && matchesSearch;
     });
-  }, [visitors, searchTerm, filterStatus]);
+  }, [visitors, searchTerm, filterStatus, selectedDate]);
 
   const handleCreate = async (data: Omit<Visitor, 'id' | 'status' | 'entryTime' | 'exitTime'>) => {
     const now = new Date();
@@ -117,10 +144,34 @@ export const VisitorsPage: React.FC<VisitorsPageProps> = ({ visitors, residents,
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-teal-500/20 transition-all text-sm placeholder:text-slate-400"
           />
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-fit overflow-x-auto">
-          <button onClick={() => setFilterStatus('todos')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'todos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Todos</button>
-          <button onClick={() => setFilterStatus('no_condominio')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'no_condominio' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>No Condomínio</button>
-          <button onClick={() => setFilterStatus('saiu')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'saiu' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Saíram</button>
+
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+           {/* Date Filter Input */}
+           <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white w-full md:w-auto relative hover:border-slate-300 transition-colors">
+              <Calendar size={16} className="text-slate-400" />
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="outline-none bg-transparent text-slate-600 text-sm font-medium focus:ring-0 w-full"
+                title="Filtrar por data de entrada"
+              />
+              {selectedDate && (
+                <button 
+                  onClick={() => setSelectedDate('')} 
+                  className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Limpar data"
+                >
+                  <X size={14} />
+                </button>
+              )}
+           </div>
+
+          <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
+            <button onClick={() => setFilterStatus('todos')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'todos' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Todos</button>
+            <button onClick={() => setFilterStatus('no_condominio')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'no_condominio' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>No Condomínio</button>
+            <button onClick={() => setFilterStatus('saiu')} className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium transition-all ${filterStatus === 'saiu' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Saíram</button>
+          </div>
         </div>
       </div>
 
@@ -139,7 +190,7 @@ export const VisitorsPage: React.FC<VisitorsPageProps> = ({ visitors, residents,
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
                <Users size={32} />
              </div>
-             <p className="text-slate-500 font-medium">Nenhum visitante encontrado</p>
+             <p className="text-slate-500 font-medium">Nenhum visitante encontrado {selectedDate ? 'nesta data' : ''}.</p>
           </div>
         )}
       </div>

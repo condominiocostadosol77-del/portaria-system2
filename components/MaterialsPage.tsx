@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Wrench, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Wrench, AlertTriangle, Calendar, X } from 'lucide-react';
 import { BorrowedMaterial, Resident } from '../types';
 import { MaterialCard } from './MaterialCard';
 import { MaterialModal } from './MaterialModal';
@@ -15,21 +16,48 @@ interface MaterialsPageProps {
 export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, residents, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'todos' | 'emprestados' | 'devolvidos'>('todos');
+  const [selectedDate, setSelectedDate] = useState(''); // New state for date filter
+  
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Helper function to check if item date matches selected filter date
+  const checkDateMatch = (dateStr: string, filterDate: string) => {
+    if (!filterDate) return true;
+    if (!dateStr) return false;
+
+    // dateStr format is DD/MM/YY HH:MM
+    const [datePart] = dateStr.split(' ');
+    if (!datePart) return false;
+
+    const [day, month, shortYear] = datePart.split('/');
+    const fullYear = parseInt(shortYear) + 2000;
+    
+    // Create YYYY-MM-DD string
+    const formattedDate = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    return formattedDate === filterDate;
+  };
+
   const filteredMaterials = useMemo(() => {
     return materials.filter(item => {
+      // 1. Check Date
+      const matchesDate = checkDateMatch(item.loanDate, selectedDate);
+
+      // 2. Check Search
       const matchesSearch = 
         item.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.borrowerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (item.unit && item.unit.includes(searchTerm));
       
-      if (filterStatus === 'emprestados') return matchesSearch && item.status === 'Emprestado';
-      if (filterStatus === 'devolvidos') return matchesSearch && item.status === 'Devolvido';
-      return matchesSearch;
+      // 3. Check Status
+      let matchesStatus = true;
+      if (filterStatus === 'emprestados') matchesStatus = item.status === 'Emprestado';
+      if (filterStatus === 'devolvidos') matchesStatus = item.status === 'Devolvido';
+
+      return matchesDate && matchesSearch && matchesStatus;
     });
-  }, [materials, searchTerm, filterStatus]);
+  }, [materials, searchTerm, filterStatus, selectedDate]);
 
   const handleCreate = async (data: Omit<BorrowedMaterial, 'id' | 'status' | 'loanDate' | 'returnDate'>) => {
     const now = new Date();
@@ -116,18 +144,42 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, residen
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 transition-all text-sm placeholder:text-slate-400"
           />
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-fit overflow-x-auto">
-          {(['todos', 'emprestados', 'devolvidos'] as const).map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilterStatus(status)}
-              className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium capitalize transition-all whitespace-nowrap ${
-                filterStatus === status ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
+        
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+           {/* Date Filter Input */}
+           <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white w-full md:w-auto relative hover:border-slate-300 transition-colors">
+              <Calendar size={16} className="text-slate-400" />
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="outline-none bg-transparent text-slate-600 text-sm font-medium focus:ring-0 w-full"
+                title="Filtrar por data de retirada"
+              />
+              {selectedDate && (
+                <button 
+                  onClick={() => setSelectedDate('')} 
+                  className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Limpar data"
+                >
+                  <X size={14} />
+                </button>
+              )}
+           </div>
+
+           <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
+            {(['todos', 'emprestados', 'devolvidos'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setFilterStatus(status)}
+                className={`flex-1 md:flex-none px-6 py-1.5 rounded-md text-sm font-medium capitalize transition-all whitespace-nowrap ${
+                  filterStatus === status ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -146,7 +198,7 @@ export const MaterialsPage: React.FC<MaterialsPageProps> = ({ materials, residen
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
                <Wrench size={32} />
              </div>
-             <p className="text-slate-500 font-medium">Nenhum empréstimo encontrado</p>
+             <p className="text-slate-500 font-medium">Nenhum empréstimo encontrado {selectedDate ? 'nesta data' : ''}.</p>
           </div>
         )}
       </div>
