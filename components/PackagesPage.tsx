@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Calendar, AlertTriangle, ArrowRight, ChevronLeft, Layers, Box } from 'lucide-react';
+import { Plus, Search, Calendar, AlertTriangle, ArrowRight, ChevronLeft, Layers, Box, X } from 'lucide-react';
 import { PackageItem, Resident, Company } from '../types';
 import { PackageCard } from './PackageCard';
 import { PackageModal } from './PackageModal';
@@ -18,6 +18,7 @@ interface PackagesPageProps {
 
 export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages, companies, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState(''); // State for date filter
   const [filterStatus, setFilterStatus] = useState<'todos' | 'pendentes' | 'retiradas'>('pendentes');
   const [selectedGroup, setSelectedGroup] = useState<{unit: string, block: string} | null>(null);
   
@@ -29,14 +30,30 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
   // State for adding new resident from within PackageModal
   const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
 
-  const stats = {
-    total: packages.length,
-    pending: packages.filter(p => p.status === 'Aguardando Retirada').length,
-    pickedUp: packages.filter(p => p.status === 'Retirada').length
+  // Helper to check date match
+  const checkDateMatch = (packageDateStr: string, filterDate: string) => {
+    if (!filterDate) return true; // No filter selected
+    if (!packageDateStr) return false;
+
+    // packageDateStr format: "DD/MM/YY HH:MM"
+    const [datePart] = packageDateStr.split(' ');
+    if (!datePart) return false;
+
+    const [day, month, shortYear] = datePart.split('/');
+    
+    // Normalize year (e.g., 24 -> 2024)
+    const fullYear = parseInt(shortYear) + 2000;
+    
+    // Create ISO string YYYY-MM-DD to compare with input
+    // Ensure padding (e.g. 1 -> 01)
+    const formattedPackageDate = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    
+    return formattedPackageDate === filterDate;
   };
 
   const filteredPackages = useMemo(() => {
     return packages.filter(pkg => {
+      // 1. Search Filter
       const matchesSearch = 
         pkg.recipientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         pkg.unit.includes(searchTerm) ||
@@ -46,11 +63,27 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
         (pkg.observations && pkg.observations.toLowerCase().includes(searchTerm.toLowerCase())) || // Search in observations for ID
         (pkg.sender && pkg.sender.toLowerCase().includes(searchTerm.toLowerCase()));
       
-      if (filterStatus === 'pendentes') return matchesSearch && pkg.status === 'Aguardando Retirada';
-      if (filterStatus === 'retiradas') return matchesSearch && pkg.status === 'Retirada';
-      return matchesSearch;
+      // 2. Status Filter
+      let matchesStatus = true;
+      if (filterStatus === 'pendentes') matchesStatus = pkg.status === 'Aguardando Retirada';
+      if (filterStatus === 'retiradas') matchesStatus = pkg.status === 'Retirada';
+
+      // 3. Date Filter
+      // We check against receivedAt for filtering context
+      const matchesDate = checkDateMatch(pkg.receivedAt, selectedDate);
+      
+      return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [packages, searchTerm, filterStatus]);
+  }, [packages, searchTerm, filterStatus, selectedDate]);
+
+  const stats = {
+    // Recalculate stats based on date filter ONLY? Or keep global?
+    // Usually stats pills show the global counts for the current search, but ignoring the status tab itself.
+    // Let's make stats reflect the current search + date filter but ignoring the status tab itself.
+    total: packages.filter(p => checkDateMatch(p.receivedAt, selectedDate)).length,
+    pending: packages.filter(p => p.status === 'Aguardando Retirada' && checkDateMatch(p.receivedAt, selectedDate)).length,
+    pickedUp: packages.filter(p => p.status === 'Retirada' && checkDateMatch(p.receivedAt, selectedDate)).length
+  };
 
   const groupedPendingPackages = useMemo(() => {
     if (filterStatus !== 'pendentes' || selectedGroup) return [];
@@ -227,10 +260,27 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
             />
         </div>
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-           <div className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-slate-500 text-sm hover:border-slate-300 cursor-pointer bg-white w-full md:w-auto">
-              <span>dd/mm/aaaa</span>
-              <Calendar size={16} />
+           {/* Date Filter */}
+           <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white w-full md:w-auto relative hover:border-slate-300 transition-colors">
+              <Calendar size={16} className="text-slate-400" />
+              <input 
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="outline-none bg-transparent text-slate-600 text-sm font-medium focus:ring-0 w-full"
+                title="Filtrar por data de recebimento"
+              />
+              {selectedDate && (
+                <button 
+                  onClick={() => setSelectedDate('')} 
+                  className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-slate-100"
+                  title="Limpar data"
+                >
+                  <X size={14} />
+                </button>
+              )}
            </div>
+
            <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
              {(['todos', 'pendentes', 'retiradas'] as const).map(status => (
                 <button
@@ -340,7 +390,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = ({ residents, packages,
              </div>
           ) : (
             <div className="py-12 text-center text-slate-400 bg-white rounded-xl border border-slate-100 border-dashed">
-              <p>Nenhuma encomenda encontrada.</p>
+              <p>Nenhuma encomenda encontrada {selectedDate ? 'nesta data' : ''}.</p>
             </div>
           )}
         </div>
