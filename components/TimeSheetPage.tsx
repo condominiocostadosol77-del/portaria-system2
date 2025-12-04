@@ -35,6 +35,18 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
     });
   }, [records, searchTerm, filterShift, filterEmployeeId]);
 
+  // Create a specific sorted list for printing (Ascending Date)
+  const sortedRecordsForPrint = useMemo(() => {
+    return [...filteredRecords].sort((a, b) => {
+      // Primary Sort: Date Ascending
+      const dateComparison = a.date.localeCompare(b.date);
+      if (dateComparison !== 0) return dateComparison;
+      
+      // Secondary Sort: Entry Time Ascending
+      return (a.entryTime || '').localeCompare(b.entryTime || '');
+    });
+  }, [filteredRecords]);
+
   const handleAddNew = () => {
     setEditingId(null);
     setIsModalOpen(true);
@@ -105,7 +117,8 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
     const headers = ["Data", "Funcionario", "Turno", "Entrada", "Saida", "Tipo", "Observacoes"];
     
     // CSV Rows
-    const rows = filteredRecords.map(r => {
+    // We use sortedRecordsForPrint here too so the CSV matches the PDF order
+    const rows = sortedRecordsForPrint.map(r => {
       // Format date
       const [y, m, d] = r.date.split('-');
       const formattedDate = `${d}/${m}/${y}`;
@@ -223,7 +236,7 @@ export const TimeSheetPage: React.FC<TimeSheetPageProps> = ({ records, employees
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map(rec => {
+            {sortedRecordsForPrint.map(rec => {
                const duration = calculateDuration(rec.entryTime, rec.exitTime);
                const [y, m, d] = rec.date.split('-');
                const dateStr = `${d}/${m}/${y}`;

@@ -145,7 +145,7 @@ export interface Visitor {
   observations: string;
 }
 
-export type TimeRecordType = 'normal' | 'extra' | 'falta' | 'folga';
+export type TimeRecordType = 'normal' | 'extra' | 'falta' | 'folga' | 'atestado' | 'ferias';
 
 export interface TimeRecord {
   id: string;

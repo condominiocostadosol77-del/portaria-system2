@@ -160,6 +160,8 @@ export const TimeSheetModal: React.FC<TimeSheetModalProps> = ({
               <option value="extra">Hora Extra</option>
               <option value="falta">Falta</option>
               <option value="folga">Folga</option>
+              <option value="atestado">Atestado</option>
+              <option value="ferias">Férias</option>
             </select>
           </div>
 
