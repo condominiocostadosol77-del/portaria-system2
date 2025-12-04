@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Save, Search, User, LogIn } from 'lucide-react';
+
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { X, Save, Search, User, LogIn, History } from 'lucide-react';
 import { Visitor, Resident } from '../types';
 
 interface VisitorModalProps {
@@ -7,21 +8,27 @@ interface VisitorModalProps {
   onClose: () => void;
   onSubmit: (data: Omit<Visitor, 'id' | 'status' | 'entryTime' | 'exitTime'>) => void;
   residents: Resident[];
+  visitorsHistory: Visitor[]; // New prop for history
 }
 
 export const VisitorModal: React.FC<VisitorModalProps> = ({ 
   isOpen, 
   onClose, 
   onSubmit, 
-  residents 
+  residents,
+  visitorsHistory = []
 }) => {
   const [mode, setMode] = useState<'resident' | 'manual'>('resident');
   
-  // Search State
+  // Search State for Residents
   const [residentSearch, setResidentSearch] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [showResidentDropdown, setShowResidentDropdown] = useState(false);
   const [selectedResidentId, setSelectedResidentId] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const residentDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Search State for Visitors History
+  const [showVisitorDropdown, setShowVisitorDropdown] = useState(false);
+  const visitorDropdownRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -33,11 +40,37 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
     observations: ''
   });
 
+  // Extract unique visitors from history for autocomplete
+  const uniqueVisitors = useMemo(() => {
+    const unique = new Map();
+    // Reverse to prioritize most recent entries if duplicates exist, 
+    // but prefer entries that have documents filled in.
+    [...visitorsHistory].reverse().forEach(v => {
+      const key = v.name.toLowerCase().trim();
+      const existing = unique.get(key);
+      
+      // If new, or if existing doesn't have doc but this one does, update/set it
+      if (!existing || (!existing.document && v.document)) {
+        unique.set(key, v);
+      }
+    });
+    return Array.from(unique.values());
+  }, [visitorsHistory]);
+
+  // Filter historical visitors based on name input
+  const filteredHistoricalVisitors = uniqueVisitors.filter(v => 
+    v.name.toLowerCase().includes(formData.name.toLowerCase()) && 
+    formData.name.length > 1 // Only show results after 2 chars
+  );
+
   // Handle outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
+      if (residentDropdownRef.current && !residentDropdownRef.current.contains(event.target as Node)) {
+        setShowResidentDropdown(false);
+      }
+      if (visitorDropdownRef.current && !visitorDropdownRef.current.contains(event.target as Node)) {
+        setShowVisitorDropdown(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -54,7 +87,7 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
 
   const handleResidentSelect = (resident: Resident) => {
     setResidentSearch(`${resident.name} - Unidade ${resident.unit}`);
-    setShowDropdown(false);
+    setShowResidentDropdown(false);
     setSelectedResidentId(resident.id);
     
     setFormData(prev => ({
@@ -63,6 +96,16 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
       unit: resident.unit,
       block: resident.block
     }));
+  };
+
+  const handleHistoricalVisitorSelect = (visitor: Visitor) => {
+    setFormData(prev => ({
+      ...prev,
+      name: visitor.name,
+      document: visitor.document || '',
+      phone: visitor.phone || ''
+    }));
+    setShowVisitorDropdown(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,17 +150,59 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           
-          {/* Nome */}
-          <div>
+          {/* Nome com Autocomplete do Histórico */}
+          <div className="relative" ref={visitorDropdownRef}>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nome do Visitante *</label>
-            <input
-              required
-              type="text"
-              value={formData.name}
-              onChange={e => setFormData({...formData, name: e.target.value})}
-              placeholder="Nome completo"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0f766e] focus:border-[#0f766e] outline-none"
-            />
+            <div className="relative">
+              <input
+                required
+                type="text"
+                value={formData.name}
+                onChange={e => {
+                  setFormData({...formData, name: e.target.value});
+                  setShowVisitorDropdown(true);
+                }}
+                onFocus={() => setShowVisitorDropdown(true)}
+                placeholder="Nome completo (busque no histórico digitando)"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0f766e] focus:border-[#0f766e] outline-none"
+                autoComplete="off"
+              />
+              {formData.name.length > 0 && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                  {showVisitorDropdown && filteredHistoricalVisitors.length > 0 ? (
+                    <History size={16} className="text-[#0f766e]" />
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            {/* Dropdown de Histórico de Visitantes */}
+            {showVisitorDropdown && filteredHistoricalVisitors.length > 0 && (
+              <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                <div className="px-4 py-2 bg-slate-50 border-b border-gray-100 text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                  <History size={12} />
+                  Visitantes Recorrentes
+                </div>
+                {filteredHistoricalVisitors.map((v, idx) => (
+                  <div 
+                    key={`${v.id}-${idx}`}
+                    onClick={() => handleHistoricalVisitorSelect(v)}
+                    className="px-4 py-2.5 hover:bg-teal-50 cursor-pointer border-b border-gray-50 last:border-0 flex items-center justify-between group"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-slate-800 group-hover:text-teal-700">{v.name}</p>
+                      {(v.document || v.phone) && (
+                        <p className="text-xs text-slate-500">
+                          {v.document ? `Doc: ${v.document}` : ''} 
+                          {v.document && v.phone ? ' • ' : ''} 
+                          {v.phone ? `Tel: ${v.phone}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Doc & Phone */}
@@ -171,7 +256,7 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
           {/* Resident Search */}
           <div>
              {mode === 'resident' ? (
-              <div className="space-y-1.5 relative" ref={dropdownRef}>
+              <div className="space-y-1.5 relative" ref={residentDropdownRef}>
                 <label className="block text-sm font-semibold text-slate-700">Morador Visitado</label>
                 <div className="relative">
                   <input 
@@ -179,10 +264,10 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
                     value={residentSearch}
                     onChange={(e) => {
                       setResidentSearch(e.target.value);
-                      setShowDropdown(true);
+                      setShowResidentDropdown(true);
                       if(e.target.value === '') setSelectedResidentId('');
                     }}
-                    onFocus={() => setShowDropdown(true)}
+                    onFocus={() => setShowResidentDropdown(true)}
                     placeholder="Buscar morador..."
                     className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#0f766e] focus:border-[#0f766e] outline-none"
                   />
@@ -192,7 +277,7 @@ export const VisitorModal: React.FC<VisitorModalProps> = ({
                 </div>
 
                 {/* Dropdown */}
-                {showDropdown && (
+                {showResidentDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                     {filteredResidents.length > 0 ? (
                       filteredResidents.map(res => (

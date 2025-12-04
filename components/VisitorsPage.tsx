@@ -200,6 +200,7 @@ export const VisitorsPage: React.FC<VisitorsPageProps> = ({ visitors, residents,
         onClose={() => setIsNewModalOpen(false)}
         onSubmit={handleCreate}
         residents={residents}
+        visitorsHistory={visitors} // Passando todo o histórico
       />
 
       {deleteId && (
