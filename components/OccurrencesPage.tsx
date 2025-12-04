@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, FileEdit, FileText, AlertTriangle } from 'lucide-react';
+import { Plus, Search, FileEdit, FileText, AlertTriangle, Calendar, X } from 'lucide-react';
 import { Occurrence, Employee } from '../types';
 import { OccurrenceCard } from './OccurrenceCard';
 import { OccurrenceModal } from './OccurrenceModal';
@@ -21,18 +22,40 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
   onRefresh
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedOccurrence, setSelectedOccurrence] = useState<Occurrence | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const filteredOccurrences = useMemo(() => {
-    return occurrences.filter(occ => 
-      occ.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      occ.outgoingEmployeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      occ.incomingEmployeeName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [occurrences, searchTerm]);
+    return occurrences.filter(occ => {
+      // Filtro de Texto
+      const matchesSearch = 
+        occ.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        occ.outgoingEmployeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        occ.incomingEmployeeName.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Filtro de Data
+      let matchesDate = true;
+      if (selectedDate) {
+         // O formato salvo é "25 de março de 2024..."
+         // O input vem como "2024-03-25"
+         const [year, month, day] = selectedDate.split('-');
+         const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+         
+         const monthIndex = parseInt(month) - 1;
+         const dayNumber = parseInt(day).toString(); // Remove zero à esquerda para casar com "1" a "9"
+
+         // Cria a string parcial para buscar dentro do timestamp completo
+         const targetDateString = `${dayNumber} de ${months[monthIndex]} de ${year}`;
+         
+         matchesDate = occ.timestamp.toLowerCase().includes(targetDateString.toLowerCase());
+      }
+
+      return matchesSearch && matchesDate;
+    });
+  }, [occurrences, searchTerm, selectedDate]);
 
   const handleCreate = async (data: Omit<Occurrence, 'id' | 'timestamp'>) => {
     const now = new Date();
@@ -100,8 +123,8 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
         </div>
       </div>
 
-      <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-100 mb-6">
-        <div className="relative w-full">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
               <Search size={18} />
             </div>
@@ -112,7 +135,28 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-400/20 transition-all text-sm placeholder:text-slate-400"
             />
-          </div>
+        </div>
+
+        {/* Date Filter Input */}
+        <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white w-full md:w-auto relative hover:border-orange-300 transition-colors">
+            <Calendar size={16} className="text-slate-400" />
+            <input 
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="outline-none bg-transparent text-slate-600 text-sm font-medium focus:ring-0 w-full md:w-auto"
+              title="Filtrar por data"
+            />
+            {selectedDate && (
+              <button 
+                onClick={() => setSelectedDate('')} 
+                className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-slate-100 transition-colors"
+                title="Limpar data"
+              >
+                <X size={14} />
+              </button>
+            )}
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -130,7 +174,7 @@ export const OccurrencesPage: React.FC<OccurrencesPageProps> = ({
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
                <FileText size={32} />
              </div>
-             <p className="text-slate-500 font-medium">Nenhuma ocorrência registrada</p>
+             <p className="text-slate-500 font-medium">Nenhuma ocorrência encontrada {selectedDate ? 'nesta data' : ''}</p>
           </div>
         )}
       </div>
