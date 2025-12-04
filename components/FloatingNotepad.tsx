@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Minus, Save, FileEdit } from 'lucide-react';
 import { Occurrence, Employee } from '../types';
@@ -22,7 +23,11 @@ export const FloatingNotepad: React.FC<FloatingNotepadProps> = ({
   onSave,
   employees
 }) => {
-  const [note, setNote] = useState('');
+  // Initialize from localStorage if available
+  const [note, setNote] = useState(() => {
+    return localStorage.getItem('portaria_notepad_content') || '';
+  });
+  
   const [isHandoverOpen, setIsHandoverOpen] = useState(false);
 
   if (!isOpen) return null;
@@ -48,8 +53,15 @@ export const FloatingNotepad: React.FC<FloatingNotepadProps> = ({
   const handleHandoverConfirm = (data: Omit<Occurrence, 'id' | 'timestamp'>) => {
     onSave(data);
     setNote(''); // Clear note after saving
+    localStorage.removeItem('portaria_notepad_content'); // Clear storage
     setIsHandoverOpen(false);
     onClose(); // Close notepad
+  };
+
+  const handleNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setNote(newValue);
+    localStorage.setItem('portaria_notepad_content', newValue);
   };
 
   return (
@@ -100,7 +112,7 @@ export const FloatingNotepad: React.FC<FloatingNotepadProps> = ({
               className="w-full h-full p-6 bg-transparent outline-none resize-none text-slate-700 text-lg leading-[2rem] font-medium"
               placeholder="Digite aqui as ocorrências do dia, observações ou pendências..."
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={handleNoteChange}
               style={{ lineHeight: '2rem' }}
             />
           </div>
