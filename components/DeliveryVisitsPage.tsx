@@ -17,49 +17,62 @@ interface DeliveryVisitsPageProps {
 
 export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, drivers, companies, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  // Initialize with today's date in YYYY-MM-DD format
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    return now.toISOString().split('T')[0];
+  });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // State for Driver Modal (used for both Add and Edit)
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [driverToEdit, setDriverToEdit] = useState<DeliveryDriver | undefined>(undefined);
   
-  // const [isDriversManagerOpen, setIsDriversManagerOpen] = useState(false); // Removed state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Helper to check if a date string matches today
-  const checkIsToday = (dateStr: string) => {
-    if (!dateStr) return false;
-    const [datePart] = dateStr.split(' ');
+  // Helper to compare visit string date (DD/MM/YYYY HH:mm) with selected date (YYYY-MM-DD)
+  const checkDateMatch = (visitEntryTime: string, targetDate: string) => {
+    if (!visitEntryTime) return false;
+    
+    // Extract DD/MM/YYYY from "DD/MM/YYYY HH:mm"
+    const [datePart] = visitEntryTime.split(' ');
     if (!datePart) return false;
     
-    const parts = datePart.split('/');
-    if (parts.length !== 3) return false;
+    const [vDay, vMonth, vYear] = datePart.split('/');
 
-    const day = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10);
-    let year = parseInt(parts[2], 10);
-    
-    if (year < 100) year += 2000;
-    
-    const now = new Date();
-    return day === now.getDate() && 
-           month === (now.getMonth() + 1) && 
-           year === now.getFullYear();
+    // Extract YYYY-MM-DD from targetDate
+    const [tYear, tMonth, tDay] = targetDate.split('-');
+
+    // Normalize year (e.g. 25 -> 2025)
+    let fullVYear = parseInt(vYear);
+    if (fullVYear < 100) fullVYear += 2000;
+
+    return parseInt(vDay) === parseInt(tDay) &&
+           parseInt(vMonth) === parseInt(tMonth) &&
+           fullVYear === parseInt(tYear);
   };
   
-  const visitsToday = visits.filter(v => checkIsToday(v.entryTime)).length;
-  const packagesToday = visits.filter(v => checkIsToday(v.entryTime)).reduce((acc, curr) => acc + curr.packageCount, 0);
+  // Calculate stats based on selected Date (ignores search term for the cards)
+  const visitsOnSelectedDate = visits.filter(v => checkDateMatch(v.entryTime, selectedDate));
+  const visitsCount = visitsOnSelectedDate.length;
+  const packagesCount = visitsOnSelectedDate.reduce((acc, curr) => acc + curr.packageCount, 0);
 
   const filteredVisits = useMemo(() => {
     return visits.filter(v => {
-      return (
+      // 1. Check Date
+      const matchesDate = checkDateMatch(v.entryTime, selectedDate);
+      
+      // 2. Check Search
+      const matchesSearch = 
         v.driverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        v.observations.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+        v.observations.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      return matchesDate && matchesSearch;
     });
-  }, [visits, searchTerm]);
+  }, [visits, searchTerm, selectedDate]);
 
   const handleAddNew = () => {
     setEditingId(null);
@@ -170,8 +183,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
 
   const editingVisit = editingId ? visits.find(v => v.id === editingId) : undefined;
 
-  // Removed isDriversManagerOpen conditional rendering
-
   return (
     <div className="animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -180,16 +191,6 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
           <p className="text-slate-500 mt-1">Registro de visitas e entregas</p>
         </div>
         <div className="flex gap-3">
-          {/* Removed "Gerenciar Entregadores" button
-          <button 
-            onClick={() => setIsDriversManagerOpen(true)}
-            className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium transition-colors shadow-sm"
-          >
-            <Users size={18} />
-            <span className="hidden sm:inline">Gerenciar Entregadores</span>
-            <span className="sm:hidden">Entregadores</span>
-          </button>
-          */}
           <button 
             onClick={handleAddNew}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-blue-100 transition-colors"
@@ -200,20 +201,36 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+      {/* Date Filter & Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Date Picker Card */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-center">
+            <p className="text-xs text-slate-500 font-medium uppercase mb-2 flex items-center gap-1">
+              <Calendar size={14} />
+              Filtrar por Data
+            </p>
+            <input 
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+            />
+        </div>
+
+        {/* Stats Cards */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
            <div>
-             <p className="text-xs text-slate-500 font-medium uppercase mb-1">Visitas Hoje</p>
-             <h3 className="text-2xl font-bold text-slate-800">{visitsToday}</h3>
+             <p className="text-xs text-slate-500 font-medium uppercase mb-1">Visitas na Data</p>
+             <h3 className="text-2xl font-bold text-slate-800">{visitsCount}</h3>
            </div>
            <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center">
-             <Calendar size={20} />
+             <Truck size={20} />
            </div>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
            <div>
              <p className="text-xs text-slate-500 font-medium uppercase mb-1">Total de Encomendas</p>
-             <h3 className="text-2xl font-bold text-slate-800">{packagesToday}</h3>
+             <h3 className="text-2xl font-bold text-slate-800">{packagesCount}</h3>
            </div>
            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-500 flex items-center justify-center">
              <Package size={20} />
@@ -228,7 +245,7 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
           </div>
           <input 
             type="text" 
-            placeholder="Buscar por entregador, empresa ou documento..." 
+            placeholder="Buscar por entregador, empresa ou observações..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm placeholder:text-slate-400"
@@ -251,7 +268,7 @@ export const DeliveryVisitsPage: React.FC<DeliveryVisitsPageProps> = ({ visits, 
              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 text-slate-300">
                <Truck size={32} />
              </div>
-             <p className="text-slate-500 font-medium">Nenhuma visita registrada</p>
+             <p className="text-slate-500 font-medium">Nenhuma visita encontrada para esta data</p>
           </div>
         )}
       </div>
